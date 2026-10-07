@@ -1,0 +1,22 @@
+[Unit]
+Description=Finance agent (trade proposals with Telegram approval)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=finance-agent
+Group=finance-agent
+WorkingDirectory=/opt/finance-agent
+EnvironmentFile=/opt/finance-agent/.env
+ExecStart=/opt/finance-agent/.venv/bin/python -m agent /opt/finance-agent/config.yaml
+Restart=on-failure
+RestartSec=30
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/opt/finance-agent/data
+
+[Install]
+WantedBy=multi-user.target
