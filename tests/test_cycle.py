@@ -1,0 +1,103 @@
+from datetime import datetime, timedelta, timezone
+from decimal import Decimal
+
+import pytest
+
+from agent.cycle import CycleRunner
+from agent.models import ProposalState, Side
+from agent.runtime import AccountRuntime
+from agent.store import Store
+from tests.fakes import Clock, FakeAnalyst, FakeBroker, FakeNews, make_account
+
+T0 = datetime(2026, 10, 7, 14, 0, tzinfo=timezone.utc)
+
+
+@pytest.fixture
+def env(tmp_path):
+    store = Store(str(tmp_path / "db.sqlite"))
+    clock = Clock(T0)
+    broker = FakeBroker(prices={"SPY": 100, "QQQ": 200})
+    sleeps = []
+
+    def make(analyst, account=None):
+        rt = AccountRuntime(account or make_account(), broker, "paper")
+        return CycleRunner(store, analyst, FakeNews(), clock, sleep=sleeps.append), rt
+
+    return store, clock, broker, sleeps, make
+
+
+def test_proposes_pending_order(env):
+    store, clock, broker, _, make = env
+    runner, rt = make(FakeAnalyst({"SPY": ("BUY", 0.8)}))
+    res = runner.run(rt)
+    assert res.alerts == [] and res.skipped_reason is None
+    [p] = res.proposals
+    assert (p.order.symbol, p.order.side, p.order.qty) == ("SPY", Side.BUY, Decimal("7"))
+    assert p.state is ProposalState.PENDING
+    assert p.expires_at == T0 + timedelta(minutes=60)
+    assert p.pct_of_equity == pytest.approx(7.014)
+    assert store.get_proposal(p.id) == p
+    assert store.peak_equity("test") == Decimal("10000")
+    assert len(p.id) == 32
+
+
+def test_paused_skips_without_analysis(env):
+    store, _, _, _, make = env
+    analyst = FakeAnalyst({"SPY": ("BUY", 0.8)})
+    runner, rt = make(analyst)
+    store.set_flag("paused", "1")
+    res = runner.run(rt)
+    assert res.skipped_reason == "paused" and analyst.calls == []
+
+
+def test_market_closed_skips(env):
+    _, _, broker, _, make = env
+    broker.market_open = False
+    analyst = FakeAnalyst({"SPY": ("BUY", 0.8)})
+    runner, rt = make(analyst)
+    assert runner.run(rt).skipped_reason == "market closed" and analyst.calls == []
+
+
+def test_broker_failure_alerts_after_retries(env):
+    store, _, broker, sleeps, make = env
+    broker.fail_reads = RuntimeError("exchange down")
+    runner, rt = make(FakeAnalyst({"SPY": ("BUY", 0.8)}))
+    res = runner.run(rt)
+    assert res.proposals == [] and "exchange down" in res.alerts[0]
+    assert sleeps == [1.0, 2.0]
+    assert store.events("test", "error")
+
+
+def test_analyst_error_alerts_and_proposes_nothing(env):
+    _, _, _, _, make = env
+    runner, rt = make(FakeAnalyst({}, error="Claude API error: x"))
+    res = runner.run(rt)
+    assert res.proposals == [] and any("analyst" in a for a in res.alerts)
+
+
+def test_no_duplicate_while_pending(env):
+    store, _, _, _, make = env
+    runner, rt = make(FakeAnalyst({"SPY": ("BUY", 0.8)}))
+    runner.run(rt)
+    assert runner.run(rt).proposals == []
+    assert len(store.proposals_in_state(ProposalState.PENDING)) == 1
+
+
+def test_drawdown_kill_switch_pauses_account(env):
+    store, _, _, _, make = env
+    store.mark_equity("test", T0 - timedelta(days=1), Decimal("20000"))
+    analyst = FakeAnalyst({"SPY": ("BUY", 0.8)})
+    runner, rt = make(analyst)
+    res = runner.run(rt)
+    assert "drawdown" in res.skipped_reason and analyst.calls == []
+    assert store.get_flag("paused:test") == "1"
+    assert any("/resume" in a for a in res.alerts)
+
+
+def test_daily_order_limit_vetoes_extra(env):
+    _, _, _, _, make = env
+    runner, rt = make(FakeAnalyst({"SPY": ("BUY", 0.8), "QQQ": ("BUY", 0.8)}),
+                      make_account(max_orders_per_day=1))
+    res = runner.run(rt)
+    assert [p.order.symbol for p in res.proposals] == ["QQQ"]
+    assert len(res.vetoes) == 1 and "SPY" in res.vetoes[0]

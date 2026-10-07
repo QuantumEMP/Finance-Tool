@@ -105,3 +105,24 @@ class FakeBroker:
     def get_order(self, client_order_id):
         self._check()
         return self.orders.get(client_order_id)
+
+
+# --- appended in Task 10 ---
+from agent.analyst import AnalysisResult
+from agent.models import Signal
+
+
+class FakeAnalyst:
+    def __init__(self, signals: dict[str, tuple[str, float]], error: str | None = None):
+        self.signals, self.error, self.calls = signals, error, []
+
+    def analyse(self, account, allowlist, indicators, headlines, portfolio):
+        self.calls.append((account, list(allowlist), dict(indicators), dict(headlines)))
+        sigs = {s: Signal(s, *self.signals.get(s, ("HOLD", 0.0)), "fake reasoning")
+                for s in allowlist}
+        return AnalysisResult(sigs, "{}", self.error)
+
+
+class FakeNews:
+    def headlines(self, symbol_map, since, limit=50):
+        return {}
