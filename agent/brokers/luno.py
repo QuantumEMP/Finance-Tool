@@ -50,10 +50,19 @@ class LunoBroker:
             except ValueError:
                 detail = r.text
             raise LunoError(f"Luno HTTP {r.status_code}: {detail}")
-        return r.json()
+        try:
+            return r.json()
+        except ValueError as e:
+            raise LunoError(f"Luno returned non-JSON body: {r.text[:200]!r}") from e
+
+    def _request(self, method: str, path: str, **kwargs) -> httpx.Response:
+        try:
+            return self._http.request(method, path, **kwargs)
+        except httpx.HTTPError as e:
+            raise LunoError(f"Luno transport error: {e!r}") from e
 
     def _get(self, path: str, **params) -> dict:
-        return self._json(self._http.get(path, params=params))
+        return self._json(self._request("GET", path, params=params))
 
     def _base_asset(self, pair: str) -> str:
         if not pair.endswith(self._quote) or pair == self._quote:
@@ -81,7 +90,10 @@ class LunoBroker:
         bid, ask = Decimal(t.get("bid") or "0"), Decimal(t.get("ask") or "0")
         if bid > 0 and ask > 0:
             return (bid + ask) / 2
-        return Decimal(t.get("last_trade") or "0")
+        last = Decimal(t.get("last_trade") or "0")
+        if last > 0:
+            return last
+        raise LunoError(f"no usable price for {symbol}")
 
     def get_candles(self, symbol: str, days: int) -> list[Candle]:
         since = int((datetime.now(timezone.utc) - timedelta(days=days)).timestamp() * 1000)
@@ -108,7 +120,7 @@ class LunoBroker:
 
     def place_limit_order(self, symbol, side, qty, limit_price, client_order_id) -> OrderResult:
         # format(..., "f") avoids scientific notation like 1E-5, which Luno rejects.
-        self._json(self._http.post("/api/1/postorder", data={
+        self._json(self._request("POST", "/api/1/postorder", data={
             "pair": symbol,
             "type": "BID" if side is Side.BUY else "ASK",
             "volume": format(qty, "f"),
@@ -118,7 +130,7 @@ class LunoBroker:
         return OrderResult(client_order_id, OrderStatus.SUBMITTED)
 
     def get_order(self, client_order_id: str) -> OrderResult | None:
-        r = self._http.get("/api/exchange/3/order", params={"client_order_id": client_order_id})
+        r = self._request("GET", "/api/exchange/3/order", params={"client_order_id": client_order_id})
         if r.status_code == 404 or (r.status_code >= 400 and "NotFound" in r.text):
             return None
         return map_luno_order(client_order_id, self._json(r))

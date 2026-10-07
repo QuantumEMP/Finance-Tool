@@ -110,3 +110,23 @@ def test_pair_must_end_with_quote():
     with pytest.raises(ValueError):
         broker({("GET", "/api/1/balance"): BALANCES,
                 ("GET", "/api/1/ticker"): TICKER}).get_portfolio(["XBTNGN"])
+
+
+def test_transport_error_raises_luno_error():
+    def boom(request):
+        raise httpx.ConnectTimeout("timed out")
+
+    with pytest.raises(LunoError):
+        broker({("GET", "/api/1/balance"): boom}).get_portfolio(["XBTZAR"])
+
+
+def test_non_json_success_body_raises_luno_error():
+    b = broker({("GET", "/api/1/balance"): lambda r: httpx.Response(200, text="<html>oops</html>")})
+    with pytest.raises(LunoError):
+        b.get_portfolio(["XBTZAR"])
+
+
+def test_all_zero_ticker_raises():
+    zero = {**TICKER, "bid": "0", "ask": "0", "last_trade": "0"}
+    with pytest.raises(LunoError):
+        broker({("GET", "/api/1/ticker"): zero}).get_price("XBTZAR")
