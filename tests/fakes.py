@@ -27,3 +27,81 @@ def make_account(name="test", allowlist=("SPY", "QQQ"), **risk_overrides) -> Acc
         periods_per_year=252, schedule=Schedule(run_at=time(10, 0), timezone="UTC"),
         risk=make_limits(**risk_overrides),
     )
+
+
+# --- appended in Task 6 ---
+from datetime import datetime, timedelta, timezone
+
+from agent.models import Candle, OrderResult, OrderStatus, Portfolio
+
+
+class Clock:
+    def __init__(self, now: datetime):
+        self.now = now
+
+    def __call__(self) -> datetime:
+        return self.now
+
+    def advance(self, **kwargs) -> None:
+        self.now += timedelta(**kwargs)
+
+
+class FakeBroker:
+    """In-memory broker. Fills instantly unless told otherwise."""
+
+    def __init__(self, name="fake", prices=None, cash="10000", positions=None,
+                 constraints=WHOLE, market_open=True):
+        self.name = name
+        self.prices = {k: Decimal(str(v)) for k, v in (prices or {}).items()}
+        self.cash = Decimal(str(cash))
+        self.positions = {k: Decimal(str(v)) for k, v in (positions or {}).items()}
+        self.default_constraints = constraints
+        self.market_open = market_open
+        self.orders: dict[str, OrderResult] = {}
+        self.placed: list[tuple] = []
+        self.place_status = OrderStatus.FILLED
+        self.fail_place: Exception | None = None         # raise; order never landed
+        self.raise_after_place: Exception | None = None  # order landed, then raise
+        self.fail_reads: Exception | None = None
+
+    def _check(self):
+        if self.fail_reads:
+            raise self.fail_reads
+
+    def is_market_open(self):
+        return self.market_open
+
+    def get_portfolio(self, symbols):
+        self._check()
+        return Portfolio(self.cash,
+                         {s: q for s, q in self.positions.items() if s in symbols and q > 0},
+                         {s: self.prices[s] for s in symbols if s in self.prices})
+
+    def get_price(self, symbol):
+        self._check()
+        return self.prices[symbol]
+
+    def get_candles(self, symbol, days):
+        self._check()
+        p = self.prices[symbol]
+        start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        return [Candle(start + timedelta(days=i), p, p, p, p, Decimal(1)) for i in range(days)]
+
+    def constraints(self, symbol):
+        return self.default_constraints
+
+    def place_limit_order(self, symbol, side, qty, limit_price, client_order_id):
+        self.placed.append((symbol, side, qty, limit_price, client_order_id))
+        if self.fail_place:
+            raise self.fail_place
+        filled = qty if self.place_status is OrderStatus.FILLED else Decimal(0)
+        result = OrderResult(client_order_id, self.place_status, filled,
+                             limit_price if filled else None)
+        self.orders[client_order_id] = result
+        if self.raise_after_place:
+            raise self.raise_after_place
+        return result
+
+    def get_order(self, client_order_id):
+        self._check()
+        return self.orders.get(client_order_id)
