@@ -36,3 +36,16 @@ def test_failure_returns_empty():
 
 def test_no_news():
     assert NoNews().headlines({"SPY": "SPY"}, T0) == {}
+
+
+def test_non_dict_body_returns_empty():
+    news = AlpacaNews("k", "s", http=httpx.Client(transport=httpx.MockTransport(
+        lambda r: httpx.Response(200, json=[1, 2]))))
+    assert news.headlines({"SPY": "SPY"}, T0) == {}
+
+
+def test_null_symbols_item_is_tolerated():
+    items = [{"headline": "bad", "symbols": None}, {"headline": "good", "symbols": ["SPY"]}]
+    news = AlpacaNews("k", "s", http=httpx.Client(transport=httpx.MockTransport(
+        lambda r: httpx.Response(200, json={"news": items}))))
+    assert news.headlines({"SPY": "SPY"}, T0) == {"SPY": ["good"]}

@@ -108,3 +108,16 @@ def test_paper_holdings_and_orders(store):
 def test_naive_datetime_rejected():
     with pytest.raises(ValueError):
         ts(datetime(2026, 1, 1))
+
+
+def test_last_equity_before_and_open_symbols(store):
+    store.mark_equity("test", T0 - timedelta(days=2), Decimal("90"))
+    store.mark_equity("test", T0 - timedelta(days=1), Decimal("100"))
+    store.mark_equity("test", T0, Decimal("110"))
+    assert store.last_equity_before("test", T0) == Decimal("100")
+    assert store.last_equity_before("test", T0 - timedelta(days=3)) is None
+    store.add_proposal(_proposal("a" * 32, "SPY", state=PS.SUBMITTED))
+    store.add_proposal(_proposal("b" * 32, "QQQ", state=PS.APPROVED))
+    store.add_proposal(_proposal("c" * 32, "VTI"))
+    store.add_proposal(_proposal("d" * 32, "IWM", state=PS.FILLED))
+    assert store.open_symbols("test") == {"SPY", "QQQ", "VTI"}

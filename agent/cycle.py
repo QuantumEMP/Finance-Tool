@@ -79,8 +79,12 @@ class CycleRunner:
             ind = compute(s, [float(c.close) for c in cs], cfg.periods_per_year)
             if ind is not None:
                 indicators[s] = ind
-        headlines = self._news.headlines({s: cfg.news_symbols.get(s, s) for s in cfg.allowlist},
-                                         now - timedelta(hours=NEWS_HOURS))
+        try:
+            headlines = self._news.headlines({s: cfg.news_symbols.get(s, s) for s in cfg.allowlist},
+                                             now - timedelta(hours=NEWS_HOURS))
+        except Exception as e:
+            log.warning("%s: news provider failed: %s", cfg.name, e)
+            headlines = {}
         analysis = self._analyst.analyse(cfg.name, cfg.allowlist, indicators, headlines, portfolio)
         store.record_event(now, cfg.name, "analysis", {
             "raw": analysis.raw, "error": analysis.error,
@@ -89,7 +93,7 @@ class CycleRunner:
         if analysis.error:
             res.alerts.append(f"{cfg.name}: analyst failed, holding everything: {analysis.error}")
 
-        pending = store.pending_symbols(cfg.name)
+        pending = store.open_symbols(cfg.name)
         orders = [o for o in propose_orders(cfg.name, analysis.signals, portfolio, constraints, cfg.risk)
                   if o.symbol not in pending]
         orders_today = ctx.orders_today

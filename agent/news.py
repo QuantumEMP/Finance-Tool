@@ -33,16 +33,16 @@ class AlpacaNews:
             })
             resp.raise_for_status()
             items = resp.json().get("news", [])
-        except (httpx.HTTPError, ValueError) as e:
+            ours_by_news: dict[str, list[str]] = {}
+            for ours, news_sym in symbol_map.items():
+                ours_by_news.setdefault(news_sym, []).append(ours)
+            out: dict[str, list[str]] = {s: [] for s in symbol_map}
+            for item in items:
+                for news_sym in item.get("symbols") or []:
+                    for ours in ours_by_news.get(news_sym, []):
+                        if len(out[ours]) < MAX_PER_SYMBOL and item.get("headline"):
+                            out[ours].append(item["headline"])
+            return out
+        except Exception as e:
             log.warning("news fetch failed: %s", e)
             return {}
-        ours_by_news: dict[str, list[str]] = {}
-        for ours, news_sym in symbol_map.items():
-            ours_by_news.setdefault(news_sym, []).append(ours)
-        out: dict[str, list[str]] = {s: [] for s in symbol_map}
-        for item in items:
-            for news_sym in item.get("symbols", []):
-                for ours in ours_by_news.get(news_sym, []):
-                    if len(out[ours]) < MAX_PER_SYMBOL and item.get("headline"):
-                        out[ours].append(item["headline"])
-        return out

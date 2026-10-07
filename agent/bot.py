@@ -34,6 +34,10 @@ def is_owner(chat_id: int | None, owner: int) -> bool:
     return chat_id is not None and chat_id == owner
 
 
+def is_owner_update(chat_id: int | None, user_id: int | None, owner: int) -> bool:
+    return is_owner(chat_id, owner) and user_id is not None and user_id == owner
+
+
 def keyboard(pid: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([[
         InlineKeyboardButton("✅ Approve", callback_data=f"approve:{pid}"),
@@ -134,7 +138,8 @@ class TradingBot:
     async def _on_button(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         query = update.callback_query
         chat_id = update.effective_chat.id if update.effective_chat else None
-        if not is_owner(chat_id, self._owner):
+        user_id = update.effective_user.id if update.effective_user else None
+        if not is_owner_update(chat_id, user_id, self._owner):
             await query.answer()
             return
         parsed = parse_callback(query.data)
@@ -174,6 +179,6 @@ class TradingBot:
     async def _on_error(self, update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
         log.error("unhandled error", exc_info=context.error)
         try:
-            await self._send(context, f"⚠️ Internal error: {context.error}")
+            await self._send(context, f"⚠️ Internal error ({type(context.error).__name__}). Check the service log.")
         except TelegramError:
             pass

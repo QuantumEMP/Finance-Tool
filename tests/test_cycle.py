@@ -101,3 +101,34 @@ def test_daily_order_limit_vetoes_extra(env):
     res = runner.run(rt)
     assert [p.order.symbol for p in res.proposals] == ["QQQ"]
     assert len(res.vetoes) == 1 and "SPY" in res.vetoes[0]
+
+
+def test_overnight_daily_loss_halts(env):
+    store, _, _, _, make = env
+    store.mark_equity("test", T0 - timedelta(days=1), Decimal("10400"))
+    analyst = FakeAnalyst({"SPY": ("BUY", 0.8)})
+    runner, rt = make(analyst)
+    res = runner.run(rt)
+    assert "daily loss" in res.skipped_reason and analyst.calls == []
+    assert store.get_flag("paused:test") is None
+
+
+def test_no_duplicate_while_submitted(env):
+    store, _, _, _, make = env
+    runner, rt = make(FakeAnalyst({"SPY": ("BUY", 0.8)}))
+    [p] = runner.run(rt).proposals
+    store.transition(p.id, [ProposalState.PENDING], ProposalState.SUBMITTED, T0)
+    assert runner.run(rt).proposals == []
+
+
+def test_news_exception_becomes_empty_headlines(env):
+    _, _, _, _, make = env
+    runner, rt = make(FakeAnalyst({"SPY": ("BUY", 0.8)}))
+
+    class Boom:
+        def headlines(self, *a, **k):
+            raise RuntimeError("news down")
+
+    runner._news = Boom()
+    res = runner.run(rt)
+    assert len(res.proposals) == 1

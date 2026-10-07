@@ -1,4 +1,4 @@
-from agent.bot import is_owner, keyboard, parse_callback
+from agent.bot import is_owner, is_owner_update, keyboard, parse_callback
 
 PID = "a" * 32
 
@@ -18,6 +18,13 @@ def test_is_owner():
     assert is_owner(123, 123) is True
     assert is_owner(456, 123) is False
     assert is_owner(None, 123) is False
+
+
+def test_is_owner_update():
+    assert is_owner_update(123, 123, 123) is True
+    assert is_owner_update(123, 456, 123) is False
+    assert is_owner_update(None, 123, 123) is False
+    assert is_owner_update(123, None, 123) is False
 
 
 def test_keyboard_callback_data():

@@ -36,12 +36,15 @@ def day_start(now: datetime) -> datetime:
 def risk_context(store: Store, cfg: AccountConfig, portfolio: Portfolio, now: datetime,
                  counted_states: Iterable[ProposalState]) -> RiskContext:
     since = day_start(now)
+    reference = store.last_equity_before(cfg.name, since)
+    if reference is None:
+        reference = store.first_equity_since(cfg.name, since)
     return RiskContext(
         portfolio=portfolio,
         limits=cfg.risk,
         allowlist=frozenset(cfg.allowlist),
         orders_today=store.count_proposals(cfg.name, since, counted_states),
-        day_start_equity=store.first_equity_since(cfg.name, since),
+        day_start_equity=reference,
         peak_equity=store.peak_equity(cfg.name),
         paused=is_paused(store, cfg.name),
     )

@@ -171,6 +171,14 @@ class Store:
                            (account, ProposalState.PENDING.value))
         return {r["symbol"] for r in rows}
 
+    def open_symbols(self, account: str) -> set[str]:
+        """Symbols with a proposal still in flight (pending, approved or submitted)."""
+        states = (ProposalState.PENDING, ProposalState.APPROVED, ProposalState.SUBMITTED)
+        rows = self._query(
+            f"SELECT symbol FROM proposals WHERE account = ? AND state IN ({','.join('?' * len(states))})",
+            (account, *(s.value for s in states)))
+        return {r["symbol"] for r in rows}
+
     def set_message_id(self, pid: str, message_id: int) -> None:
         self._write("UPDATE proposals SET message_id = ? WHERE id = ?", (message_id, pid))
 
@@ -199,6 +207,12 @@ class Store:
         rows = self._query(
             "SELECT equity FROM equity_marks WHERE account = ? AND ts >= ? ORDER BY ts LIMIT 1",
             (account, ts(since)))
+        return Decimal(rows[0]["equity"]) if rows else None
+
+    def last_equity_before(self, account: str, before: datetime) -> Decimal | None:
+        rows = self._query(
+            "SELECT equity FROM equity_marks WHERE account = ? AND ts < ? ORDER BY ts DESC LIMIT 1",
+            (account, ts(before)))
         return Decimal(rows[0]["equity"]) if rows else None
 
     def equity_marks_since(self, account: str, since: datetime) -> list[tuple[datetime, Decimal]]:

@@ -82,6 +82,12 @@ against the live API docs page. Before enabling live mode for Luno:
    and holdings, and `/run luno` should produce sensible prices.
 2. Confirm the order endpoints (`POST /api/1/postorder`, `GET /api/exchange/3/order`)
    against https://www.luno.com/en/developers/api.
+3. Confirm what Luno returns for an unknown `client_order_id` on `GET /api/exchange/3/order`
+   (the agent treats HTTP 404 or an error containing "NotFound" as "order does not exist").
+4. Known limitation: approved limit orders that do not fill are not cancelled automatically.
+   Alpaca DAY orders expire at market close; Luno orders stay open until filled or cancelled
+   manually on Luno. Check open orders on the exchange after approving, and cancel stale ones
+   by hand. (Planned follow-up: automatic cancel after expiry.)
 
 ## Development
 
