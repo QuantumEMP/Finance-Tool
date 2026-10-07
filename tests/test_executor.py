@@ -119,12 +119,58 @@ def test_market_read_failure_cancels(env):
     assert out.state is PS.CANCELLED and broker.placed == []
 
 
-def test_submit_error_order_never_landed_fails(env):
+def test_submit_error_never_landed_fails_after_grace(env):
+    _, store, clock, broker, executor = env
+    make_pending(store)
+    broker.fail_place = RuntimeError("connection reset")
+    ex = executor()
+    out = ex.approve(PID)
+    assert out.state is PS.SUBMITTED and "unknown" in out.message
+    clock.advance(minutes=71)
+    [out] = ex.reconcile()
+    assert out.state is PS.FAILED and state(store) is PS.FAILED
+    assert len(broker.placed) == 1
+
+
+def test_submit_error_order_lands_late_is_reconciled(env):
     _, store, _, broker, executor = env
     make_pending(store)
     broker.fail_place = RuntimeError("connection reset")
-    out = executor().approve(PID)
-    assert out.state is PS.FAILED and len(broker.placed) == 1
+    ex = executor()
+    assert ex.approve(PID).state is PS.SUBMITTED
+    broker.orders[PID] = OrderResult(PID, OrderStatus.FILLED, Decimal("5"), Decimal("100.20"))
+    [out] = ex.reconcile()
+    assert out.state is PS.FILLED and len(broker.placed) == 1
+
+
+def test_not_found_before_grace_stays_submitted(env):
+    _, store, clock, broker, executor = env
+    make_pending(store)
+    broker.fail_place = RuntimeError("connection reset")
+    ex = executor()
+    ex.approve(PID)
+    clock.advance(minutes=30)
+    assert ex.reconcile() == [] and state(store) is PS.SUBMITTED
+
+
+def test_orphaned_approved_is_cancelled_after_grace(env):
+    _, store, clock, broker, executor = env
+    make_pending(store)
+    store.transition(PID, [PS.PENDING], PS.APPROVED, T0)
+    clock.advance(minutes=71)
+    [out] = executor().reconcile()
+    assert out.state is PS.CANCELLED and broker.placed == []
+
+
+def test_reconcile_race_no_duplicate(env):
+    _, store, _, broker, executor = env
+    make_pending(store)
+    broker.place_status = OrderStatus.SUBMITTED
+    ex = executor()
+    ex.approve(PID)
+    broker.orders[PID] = OrderResult(PID, OrderStatus.FILLED, Decimal("5"), Decimal("100.1"))
+    assert len(ex.reconcile()) == 1
+    assert ex.reconcile() == []
 
 
 def test_submit_error_but_order_landed_is_found_not_resubmitted(env):

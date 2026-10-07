@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Callable
 
 from agent.models import OrderResult, OrderStatus, Proposal, ProposalState
@@ -20,6 +20,7 @@ from agent.store import Store
 
 log = logging.getLogger(__name__)
 PS = ProposalState
+RECONCILE_GRACE = timedelta(minutes=10)
 
 
 @dataclass(frozen=True)
@@ -113,6 +114,16 @@ class Executor:
                 continue
             if result is not None and result.status is not OrderStatus.SUBMITTED:
                 outcomes.append(self._apply(p.id, result))
+            elif result is None and self._now() >= p.expires_at + RECONCILE_GRACE:
+                if self._store.transition(p.id, [PS.SUBMITTED], PS.FAILED, self._now(),
+                                          reason="order never appeared on the exchange"):
+                    outcomes.append(ExecutionOutcome(
+                        p.id, PS.FAILED, "❗ Order failed: it never appeared on the exchange."))
+        for p in self._store.proposals_in_state(PS.APPROVED):
+            if self._now() >= p.expires_at + RECONCILE_GRACE and self._store.transition(
+                    p.id, [PS.APPROVED], PS.CANCELLED, self._now(), reason="interrupted before submission"):
+                outcomes.append(ExecutionOutcome(p.id, PS.CANCELLED,
+                                                 "🚫 Cancelled: interrupted before submission"))
         return outcomes
 
     def expire_stale(self) -> list[Proposal]:
@@ -149,10 +160,6 @@ class Executor:
                 continue
             if last is not None and last.status is not OrderStatus.SUBMITTED:
                 return self._apply(pid, last)
-        if submit_error is not None and last is None and not errored:
-            self._store.transition(pid, [PS.SUBMITTED], PS.FAILED, self._now(),
-                                   reason=f"order not accepted: {submit_error}")
-            return ExecutionOutcome(pid, PS.FAILED, f"❗ Order failed: {submit_error}")
         if errored or submit_error is not None:
             return ExecutionOutcome(pid, PS.SUBMITTED, "⚠️ Order status unknown; please check the "
                                                        "exchange. I'll keep checking.")
@@ -161,8 +168,9 @@ class Executor:
     def _apply(self, pid: str, result: OrderResult) -> ExecutionOutcome:
         state = {OrderStatus.FILLED: PS.FILLED, OrderStatus.PARTIALLY_FILLED: PS.PARTIALLY_FILLED,
                  OrderStatus.REJECTED: PS.FAILED}[result.status]
-        self._store.transition(pid, [PS.SUBMITTED], state, self._now(), reason=result.reason,
-                               filled_qty=result.filled_qty, avg_price=result.avg_price)
+        if not self._store.transition(pid, [PS.SUBMITTED], state, self._now(), reason=result.reason,
+                                      filled_qty=result.filled_qty, avg_price=result.avg_price):
+            return self._already(pid)
         o = self._store.get_proposal(pid).order
         if state is PS.FILLED:
             msg = f"✅ Filled: {o.side.value} {_fmt(result.filled_qty)} {o.symbol} @ {_fmt(result.avg_price)}"
