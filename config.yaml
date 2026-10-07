@@ -1,0 +1,51 @@
+analyst_model: claude-opus-5-5
+db_path: data/finance-agent.db
+
+heartbeat:
+  run_at: "08:00"
+  timezone: Africa/Johannesburg   # set to your own timezone
+
+accounts:
+  - name: alpaca
+    venue: alpaca
+    mode: paper
+    quote_currency: USD
+    allowlist: [SPY, QQQ, VTI, AAPL, MSFT]
+    periods_per_year: 252
+    schedule:
+      run_at: "10:00"               # 30 min after US market open
+      timezone: America/New_York
+      weekdays_only: true
+    risk:
+      max_position_pct: 20
+      max_order_pct: 10
+      min_cash_reserve_pct: 10
+      daily_loss_halt_pct: 3
+      drawdown_kill_pct: 15
+      max_orders_per_day: 5
+      min_confidence: 0.6
+      proposal_ttl_minutes: 60
+      max_drift_pct: 1.0
+
+  - name: luno
+    venue: luno
+    mode: paper
+    quote_currency: ZAR             # change if your Luno wallet is NGN, MYR, ...
+    allowlist: [XBTZAR, ETHZAR]
+    news_symbols: {XBTZAR: BTCUSD, ETHZAR: ETHUSD}
+    periods_per_year: 365
+    paper_starting_cash: 10000
+    paper_fee_pct: 0.6
+    schedule:
+      run_at: "09:00"
+      timezone: Africa/Johannesburg
+    risk:
+      max_position_pct: 10
+      max_order_pct: 5
+      min_cash_reserve_pct: 20
+      daily_loss_halt_pct: 5
+      drawdown_kill_pct: 20
+      max_orders_per_day: 5
+      min_confidence: 0.6
+      proposal_ttl_minutes: 60
+      max_drift_pct: 1.5
