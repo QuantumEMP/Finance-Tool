@@ -36,9 +36,7 @@ def propose_orders(account: str, signals: dict[str, Signal], portfolio: Portfoli
 
     for symbol in sorted(signals):
         sig = signals[symbol]
-        if sig.action not in ("BUY", "SELL"):
-            continue
-        if sig.action == "BUY" and sig.confidence < limits.min_confidence:
+        if sig.action not in ("BUY", "SELL") or sig.confidence < limits.min_confidence:
             continue
         price = portfolio.prices.get(symbol, ZERO)
         c = constraints.get(symbol)

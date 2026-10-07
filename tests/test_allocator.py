@@ -58,8 +58,8 @@ def test_two_buys_share_cash():
 
 def test_sell_portion_by_confidence():
     pf = Portfolio(D("9000"), {"SPY": D("10")}, {"SPY": D("100")})
-    o = run([sig("SPY", "SELL", 0.5)], pf)[0]
-    assert (o.side, o.qty, o.limit_price) == (Side.SELL, D("5"), D("99.80"))
+    o = run([sig("SPY", "SELL", 0.6)], pf)[0]
+    assert (o.side, o.qty, o.limit_price) == (Side.SELL, D("6"), D("99.80"))
 
 
 def test_sell_does_not_leave_dust():
@@ -75,6 +75,8 @@ def test_no_order_cases():
     assert run([sig("SPY", "BUY", 0.5)], pf) == []           # below min_confidence
     assert run([sig("SPY", "BUY", 0.9)], pf, constraints={}) == []  # no constraints
     assert run([sig("SPY", "BUY", 0.9)], Portfolio(D("0"), {}, {"SPY": D("100")})) == []
+    pf_hold = Portfolio(D("10000"), {"SPY": D("10")}, {"SPY": D("100")})
+    assert run([sig("SPY", "SELL", 0.5)], pf_hold) == []  # SELL below min_confidence
 
 
 def test_zero_price_skipped():
