@@ -34,7 +34,9 @@ is the default for both accounts.
 ### 2. Install on the Ubuntu machine (24.04+, or Python 3.11+)
 
 ```bash
-sudo useradd --system --create-home --home-dir /opt/finance-agent finance-agent
+sudo useradd --system --no-create-home --home-dir /opt/finance-agent --shell /usr/sbin/nologin finance-agent
+sudo mkdir -p /opt/finance-agent
+sudo chown finance-agent: /opt/finance-agent
 sudo -u finance-agent git clone <this repo> /opt/finance-agent   # or copy the folder
 cd /opt/finance-agent
 sudo -u finance-agent python3 -m venv .venv
@@ -76,7 +78,7 @@ Restart the service. The log and every proposal message show **LIVE** for live a
 Luno's API field names were implemented from the official SDKs but could not be checked
 against the live API docs page. Before enabling live mode for Luno:
 
-1. Do a read-only check first: in paper mode, `/status` should show the correct ZAR cash
+1. Do a read-only check first: in paper mode, `/status` should show the correct quote-currency cash (e.g. ZAR)
    and holdings, and `/run luno` should produce sensible prices.
 2. Confirm the order endpoints (`POST /api/1/postorder`, `GET /api/exchange/3/order`)
    against https://www.luno.com/en/developers/api.
