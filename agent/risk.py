@@ -44,7 +44,7 @@ def check_account(ctx: RiskContext) -> Halt | None:
     if ctx.day_start_equity and equity < ctx.day_start_equity * (1 - pct(lim.daily_loss_halt_pct)):
         return Halt(
             f"daily loss halt: equity {equity:.2f} is more than "
-            f"{lim.daily_loss_halt_pct}% below today's start {ctx.day_start_equity:.2f}"
+            f"{lim.daily_loss_halt_pct}% below {ctx.day_start_equity:.2f} at the start of the day"
         )
     return None
 

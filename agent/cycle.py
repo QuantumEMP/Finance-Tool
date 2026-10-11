@@ -20,6 +20,7 @@ from agent.store import Store
 log = logging.getLogger(__name__)
 CANDLE_DAYS = 90
 NEWS_HOURS = 48
+BAR_PERIOD = timedelta(days=1)
 
 
 @dataclass
@@ -76,7 +77,10 @@ class CycleRunner:
 
         indicators = {}
         for s, cs in candles.items():
-            ind = compute(s, [float(c.close) for c in cs], cfg.periods_per_year)
+            # A daily bar is only a close once its day is over. At 10:00 New York (or any
+            # time on Luno) the latest bar is today's, still in progress: leave it out.
+            closes = [float(c.close) for c in cs if c.ts + BAR_PERIOD <= now]
+            ind = compute(s, closes, cfg.periods_per_year)
             if ind is not None:
                 indicators[s] = ind
         try:

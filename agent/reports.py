@@ -44,6 +44,8 @@ def status_text(store: Store, runtimes: dict[str, AccountRuntime]) -> str:
             continue
         ccy = rt.config.quote_currency
         lines.append(f"\n{header}\n  equity {money(pf.equity)} {ccy}, cash {money(pf.cash)} {ccy}")
+        if pf.other_value:
+            lines.append(f"  other holdings (not traded) ≈ {money(pf.other_value)} {ccy}")
         for s, q in sorted(pf.positions.items()):
             lines.append(f"  {s}: {format(q, 'f')} ≈ {money(pf.position_value(s))} {ccy}")
     return "\n".join(lines).strip()
@@ -74,7 +76,8 @@ def report_text(store: Store, accounts: list[str], now: datetime, days: int) -> 
     return "\n".join(lines)
 
 
-def heartbeat_text(store: Store, runtimes: dict[str, AccountRuntime], now: datetime) -> str:
-    today = [p for p in store.proposals_since(day_start(now))]
+def heartbeat_text(store: Store, runtimes: dict[str, AccountRuntime], now: datetime,
+                   tz: str = "UTC") -> str:
+    today = store.proposals_since(day_start(now, tz))
     done = sum(p.state in (ProposalState.FILLED, ProposalState.PARTIALLY_FILLED) for p in today)
     return f"💓 Alive. Today: {len(today)} proposal(s), {done} filled.\n\n" + status_text(store, runtimes)

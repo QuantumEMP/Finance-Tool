@@ -14,6 +14,9 @@ is the default for both accounts.
    a confidence score and short reasoning for each allowlisted symbol.
 3. Code sizes orders from confidence and the risk limits in `config.yaml`.
 4. The risk guard can veto anything. Daily-loss halts and a drawdown kill switch pause the account.
+   Equity is the whole account, including holdings outside the allowlist (which the agent
+   never trades), and is recorded hourly. The daily-loss halt compares against the last
+   value before midnight in the account's schedule time zone.
 5. You get a Telegram message per trade. Nothing happens unless you tap ✅ Approve
    before it expires. On approval, price drift and risk are re-checked first.
 

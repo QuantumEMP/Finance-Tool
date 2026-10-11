@@ -16,7 +16,7 @@ from agent.config import AppConfig
 from agent.cycle import CycleRunner
 from agent.executor import Executor
 from agent.reports import format_proposal, heartbeat_text, report_text, status_text
-from agent.runtime import AccountRuntime, resume
+from agent.runtime import AccountRuntime, mark_all_equity, resume
 from agent.store import Store
 
 log = logging.getLogger(__name__)
@@ -78,6 +78,7 @@ class TradingBot:
         jq.run_daily(self._job_heartbeat, time=hb.run_at.replace(tzinfo=ZoneInfo(hb.timezone)),
                      name="heartbeat")
         jq.run_repeating(self._job_housekeeping, interval=300, first=30, name="housekeeping")
+        jq.run_repeating(self._job_mark_equity, interval=3600, first=60, name="equity")
         return app
 
     async def _send(self, context: ContextTypes.DEFAULT_TYPE, text: str, **kwargs):
@@ -193,8 +194,12 @@ class TradingBot:
         for outcome in await asyncio.to_thread(self._executor.reconcile):
             await self._send(context, outcome.message)
 
+    async def _job_mark_equity(self, context: ContextTypes.DEFAULT_TYPE) -> None:
+        await asyncio.to_thread(mark_all_equity, self._store, self._runtimes, self._now())
+
     async def _job_heartbeat(self, context: ContextTypes.DEFAULT_TYPE) -> None:
-        text = await asyncio.to_thread(heartbeat_text, self._store, self._runtimes, self._now())
+        text = await asyncio.to_thread(heartbeat_text, self._store, self._runtimes, self._now(),
+                                       self._config.heartbeat.timezone)
         await self._send(context, text)
 
     async def _on_error(self, update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
