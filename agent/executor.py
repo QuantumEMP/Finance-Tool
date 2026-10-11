@@ -1,6 +1,7 @@
 """The only code path that places orders.
 
 approve(): PENDING → APPROVED → (re-checks) → SUBMITTED → FILLED/PARTIALLY_FILLED/FAILED.
+reconcile() cancels orders still open after expiry + grace (→ EXPIRED, or PARTIALLY_FILLED).
 Each step is a guarded SQL transition, so double taps and restarts can't double-trade.
 place_limit_order is never retried; after an error we look the order up by its id.
 """
@@ -112,9 +113,16 @@ class Executor:
             except Exception:
                 log.warning("reconcile: could not fetch %s", p.id)
                 continue
+            overdue = self._now() >= p.expires_at + RECONCILE_GRACE
+            if result is not None and result.status is OrderStatus.SUBMITTED and overdue:
+                # Still resting after its proposal expired: the price is stale and the
+                # open order locks the symbol, so cancel it and record what filled.
+                result = self._cancel_open(p, rt)
+                if result is None:
+                    continue
             if result is not None and result.status is not OrderStatus.SUBMITTED:
-                outcomes.append(self._apply(p.id, result))
-            elif result is None and self._now() >= p.expires_at + RECONCILE_GRACE:
+                outcomes.append(self._apply(p.id, result, cancelled=overdue))
+            elif result is None and overdue:
                 if self._store.transition(p.id, [PS.SUBMITTED], PS.FAILED, self._now(),
                                           reason="order never appeared on the exchange"):
                     outcomes.append(ExecutionOutcome(
@@ -165,10 +173,25 @@ class Executor:
                                                        "exchange. I'll keep checking.")
         return ExecutionOutcome(pid, PS.SUBMITTED, "⏳ Order placed; waiting for a fill. I'll report back.")
 
-    def _apply(self, pid: str, result: OrderResult) -> ExecutionOutcome:
+    def _cancel_open(self, p: Proposal, rt: AccountRuntime) -> OrderResult | None:
+        """Cancel an overdue open order and read back its final state. None means try again
+        on the next pass (the cancel failed, or the venue can no longer find the order)."""
+        try:
+            rt.broker.cancel_order(p.id)
+            return rt.broker.get_order(p.id)
+        except Exception as e:
+            log.warning("reconcile: could not cancel %s", p.id)
+            self._store.record_event(self._now(), p.order.account, "cancel_error",
+                                     {"proposal": p.id, "error": str(e)})
+            return None
+
+    def _apply(self, pid: str, result: OrderResult, cancelled: bool = False) -> ExecutionOutcome:
         state = {OrderStatus.FILLED: PS.FILLED, OrderStatus.PARTIALLY_FILLED: PS.PARTIALLY_FILLED,
-                 OrderStatus.REJECTED: PS.FAILED}[result.status]
-        if not self._store.transition(pid, [PS.SUBMITTED], state, self._now(), reason=result.reason,
+                 OrderStatus.REJECTED: PS.EXPIRED if cancelled else PS.FAILED}[result.status]
+        reason = result.reason
+        if cancelled and state is not PS.FILLED:
+            reason = "not filled before the proposal expired; cancelled"
+        if not self._store.transition(pid, [PS.SUBMITTED], state, self._now(), reason=reason,
                                       filled_qty=result.filled_qty, avg_price=result.avg_price):
             return self._already(pid)
         o = self._store.get_proposal(pid).order
@@ -177,6 +200,11 @@ class Executor:
         elif state is PS.PARTIALLY_FILLED:
             msg = (f"◐ Partially filled: {_fmt(result.filled_qty)} of {_fmt(o.qty)} {o.symbol} "
                    f"@ {_fmt(result.avg_price)}")
+            if cancelled:
+                msg += "; the rest was cancelled"
+        elif state is PS.EXPIRED:
+            msg = (f"⌛ Cancelled unfilled order: {o.side.value} {_fmt(o.qty)} {o.symbol} "
+                   f"@ {_fmt(o.limit_price)} did not fill before the proposal expired.")
         else:
             msg = f"❗ Order not filled: {result.reason or 'rejected by the exchange'}"
         return ExecutionOutcome(pid, state, msg)

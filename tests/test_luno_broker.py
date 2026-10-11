@@ -130,3 +130,32 @@ def test_all_zero_ticker_raises():
     zero = {**TICKER, "bid": "0", "ask": "0", "last_trade": "0"}
     with pytest.raises(LunoError):
         broker({("GET", "/api/1/ticker"): zero}).get_price("XBTZAR")
+
+
+def test_cancel_looks_up_order_id_then_stops_order():
+    seen = {}
+
+    def stop(request):
+        seen.update({k: v[0] for k, v in parse_qs(request.content.decode()).items()})
+        return httpx.Response(200, json={"success": True})
+
+    b = broker({("GET", "/api/exchange/3/order"): {"order_id": "BXMC2CJ7HNB88U4", "status": "AWAITING"},
+                ("POST", "/api/1/stoporder"): stop})
+    b.cancel_order(CID)
+    assert seen == {"order_id": "BXMC2CJ7HNB88U4"}
+
+
+def test_cancel_skips_complete_and_missing_orders():
+    def stop(request):
+        raise AssertionError("should not cancel")
+
+    done = {"order_id": "X", "status": "COMPLETE"}
+    broker({("GET", "/api/exchange/3/order"): done, ("POST", "/api/1/stoporder"): stop}).cancel_order(CID)
+    broker({("POST", "/api/1/stoporder"): stop}).cancel_order(CID)
+
+
+def test_cancel_error_raises():
+    b = broker({("GET", "/api/exchange/3/order"): {"order_id": "X", "status": "AWAITING"},
+                ("POST", "/api/1/stoporder"): lambda r: httpx.Response(500, json={"error": "boom"})})
+    with pytest.raises(LunoError):
+        b.cancel_order(CID)

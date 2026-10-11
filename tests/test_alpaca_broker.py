@@ -20,6 +20,7 @@ class FakeTrading:
     def __init__(self):
         self.submitted = []
         self.orders = {}
+        self.cancelled = []
 
     def get_clock(self):
         return SimpleNamespace(is_open=True)
@@ -40,6 +41,9 @@ class FakeTrading:
         if cid in self.orders:
             return self.orders[cid]
         raise NotFound()
+
+    def cancel_order_by_id(self, order_id):
+        self.cancelled.append(order_id)
 
 
 class FakeData:
@@ -85,6 +89,19 @@ def test_place_limit_order_request(broker):
 
 def test_get_order_not_found_is_none(broker):
     assert broker.get_order(CID) is None
+
+
+def test_cancel_open_order_by_its_alpaca_id(broker):
+    broker._trading.orders[CID] = SimpleNamespace(id="uuid-1", status=SimpleNamespace(value="new"))
+    broker.cancel_order(CID)
+    assert broker._trading.cancelled == ["uuid-1"]
+
+
+def test_cancel_skips_closed_and_missing_orders(broker):
+    broker._trading.orders[CID] = SimpleNamespace(id="uuid-1", status=SimpleNamespace(value="filled"))
+    broker.cancel_order(CID)
+    broker.cancel_order("d" * 32)
+    assert broker._trading.cancelled == []
 
 
 @pytest.mark.parametrize("status,filled,expected", [
