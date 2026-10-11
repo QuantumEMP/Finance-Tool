@@ -104,6 +104,24 @@ def test_risk_recheck_cancels(env):
     assert out.state is PS.CANCELLED and "exceeds" in out.message
 
 
+def test_second_approval_counts_open_first_order_against_reserve(env):
+    # Equity 10000 (1500 cash + 8500 QQQ), reserve 10% = 1000. Each buy of 4 SPY is ~401.
+    # The first rests unfilled; the balance stays 1500, but only ~1099 is still free.
+    _, store, _, broker, executor = env
+    broker.cash = Decimal("1500")
+    broker.positions = {"QQQ": Decimal("85")}
+    broker.prices["QQQ"] = Decimal("100")
+    broker.place_status = OrderStatus.SUBMITTED
+    second = "b" * 32
+    make_pending(store, qty="4")
+    make_pending(store, pid=second, qty="4")
+    ex = executor()
+    assert ex.approve(PID).state is PS.SUBMITTED
+    out = ex.approve(second)
+    assert out.state is PS.CANCELLED and "cash reserve" in out.message
+    assert [p[4] for p in broker.placed] == [PID]
+
+
 def test_paused_cancels(env):
     _, store, _, broker, executor = env
     make_pending(store)

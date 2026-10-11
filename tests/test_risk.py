@@ -35,6 +35,15 @@ def test_order_too_large():
     assert "exceeds" in check_order(order(qty="11"), ctx())
 
 
+def test_cash_reserve_uses_free_cash():
+    # 1500 cash but 500 is held by an open buy: a 501 buy leaves 499 free, under the 1000 reserve.
+    pf = Portfolio(D("1500"), {"VTI": D("85")}, {"SPY": D("100"), "VTI": D("100")},
+                   spendable=D("1000"))
+    c = ctx(portfolio=pf)
+    assert check_order(order(qty="5"), ctx(cash="1500", positions={"VTI": D("85")})) is None
+    assert "cash reserve" in check_order(order(qty="5"), c)
+
+
 def test_position_cap():
     c = ctx(cash="8500", positions={"SPY": D("15")})
     assert "position" in check_order(order(qty="6"), c)

@@ -48,10 +48,14 @@ class AlpacaBroker:
         return bool(self._trading.get_clock().is_open)
 
     def get_portfolio(self, symbols: list[str]) -> Portfolio:
-        cash = _dec(self._trading.get_account().cash)
+        account = self._trading.get_account()
+        # `cash` doesn't drop while a buy order is open; buying power does. Use the
+        # non-marginable figure so margin never counts as spendable cash.
+        power = account.non_marginable_buying_power or account.buying_power
         positions = {p.symbol: _dec(p.qty) for p in self._trading.get_all_positions()
                      if p.symbol in symbols}
-        return Portfolio(cash, positions, {s: self.get_price(s) for s in symbols})
+        return Portfolio(_dec(account.cash), positions, {s: self.get_price(s) for s in symbols},
+                         spendable=_dec(power) if power is not None else None)
 
     def get_price(self, symbol: str) -> Decimal:
         req = StockLatestTradeRequest(symbol_or_symbols=symbol, feed=DataFeed.IEX)

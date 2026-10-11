@@ -31,7 +31,7 @@ def propose_orders(account: str, signals: dict[str, Signal], portfolio: Portfoli
     if equity <= 0:
         return []
     buffer = pct(limits.limit_buffer_pct)
-    cash_left = portfolio.cash
+    cash_left = portfolio.free_cash
     orders: list[ProposedOrder] = []
 
     for symbol in sorted(signals):

@@ -66,11 +66,21 @@ class OrderResult:
 
 @dataclass(frozen=True)
 class Portfolio:
-    """Cash and holdings of one account, keyed by trading symbol."""
+    """Cash and holdings of one account, keyed by trading symbol.
+
+    `cash` is the full cash balance (it counts toward equity). `spendable` is the part
+    not already tied up in open buy orders; None means all of `cash` is free.
+    """
 
     cash: Decimal
     positions: dict[str, Decimal] = field(default_factory=dict)
     prices: dict[str, Decimal] = field(default_factory=dict)
+    spendable: Decimal | None = None
+
+    @property
+    def free_cash(self) -> Decimal:
+        """Cash available for new buys: never more than the balance itself."""
+        return self.cash if self.spendable is None else min(self.cash, self.spendable)
 
     def position_value(self, symbol: str) -> Decimal:
         return self.positions.get(symbol, ZERO) * self.prices.get(symbol, ZERO)
