@@ -55,6 +55,19 @@ def test_sell_more_than_held():
     assert check_order(order(qty="3", side=Side.SELL), c) is None
 
 
+def test_sell_larger_than_order_cap_passes():
+    # 20 SPY @ 100 is 20% of equity, above the 10% order cap; a full exit must still pass.
+    c = ctx(cash="8000", positions={"SPY": D("20")})
+    assert check_order(order(qty="20", side=Side.SELL), c) is None
+
+
+def test_sell_still_subject_to_account_checks():
+    c = ctx(cash="8000", positions={"SPY": D("20")}, paused=True)
+    assert "paused" in check_order(order(qty="20", side=Side.SELL), c)
+    c = ctx(cash="8000", positions={"SPY": D("20")}, orders_today=5)
+    assert "daily order limit" in check_order(order(qty="20", side=Side.SELL), c)
+
+
 def test_paused():
     assert "paused" in check_order(order(), ctx(paused=True))
 
