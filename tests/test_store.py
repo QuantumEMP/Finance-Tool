@@ -132,3 +132,33 @@ def test_reset_peak_ignores_earlier_marks(store):
     store.mark_equity("test", T0 + timedelta(hours=1), Decimal("95"))
     assert store.peak_equity("test") == Decimal("95")
     assert store.peak_equity("other") == Decimal("500")
+
+
+def test_withdrawal_does_not_look_like_a_drawdown(store):
+    store.mark_equity("test", T0 - timedelta(days=2), Decimal("10000"))
+    store.mark_equity("test", T0 - timedelta(days=1), Decimal("10000"))
+    store.add_cash_flow("test", T0 - timedelta(hours=12), Decimal("-3000"))
+    store.mark_equity("test", T0, Decimal("7000"))
+    # Old marks are measured as if the 3000 had never been there.
+    assert store.peak_equity("test") == Decimal("7000")
+    assert store.last_equity_before("test", T0) == Decimal("7000")
+    assert store.first_equity_since("test", T0 - timedelta(days=3)) == Decimal("7000")
+    # Marks taken after the flow are unaffected.
+    assert store.first_equity_since("test", T0) == Decimal("7000")
+
+
+def test_deposit_does_not_raise_the_peak(store):
+    store.mark_equity("test", T0 - timedelta(days=1), Decimal("10000"))
+    store.add_cash_flow("test", T0 - timedelta(hours=1), Decimal("5000"))
+    store.mark_equity("test", T0, Decimal("14000"))  # lost 1000 after the deposit
+    assert store.peak_equity("test") == Decimal("15000")
+    assert store.net_cash_flow("test", T0 - timedelta(days=1)) == Decimal("5000")
+    assert store.net_cash_flow("test", T0 - timedelta(days=1), T0 - timedelta(hours=2)) == Decimal("0")
+    assert store.net_cash_flow("other", T0 - timedelta(days=1)) == Decimal("0")
+
+
+def test_filled_proposals(store):
+    store.add_proposal(_proposal("a" * 32))
+    store.add_proposal(_proposal("b" * 32, state=PS.FILLED))
+    store.add_proposal(_proposal("c" * 32, state=PS.PARTIALLY_FILLED, account="other"))
+    assert [p.id for p in store.filled_proposals("test")] == ["b" * 32]

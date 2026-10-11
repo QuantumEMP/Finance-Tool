@@ -59,9 +59,11 @@ times and risk limits, then run `sudo systemctl restart finance-agent`.
 | Command | What it does |
 |---|---|
 | `/run [alpaca\|luno]` | Run an analysis cycle now |
-| `/status` | Mode, balances, positions, paused state |
-| `/report [days]` | Proposals, fills and equity change (default 7 days) |
+| `/status` | Mode, balances, positions (with average cost and unrealised P&L for units the agent bought), paused state |
+| `/report [days]` | Proposals, fills, equity change net of deposits, realised P&L, buy-and-hold of the allowlist over the same period, and the average price move after signals by confidence (default 7 days) |
 | `/pause` | Stop all proposals and executions immediately |
+| `/deposit <account> <amount>` | Record money you added, so it isn't counted as a gain |
+| `/withdraw <account> <amount>` | Record money you took out, so it isn't counted as a loss. Do this before or when you withdraw: an unrecorded withdrawal can trip the daily-loss halt or kill switch |
 | `/resume` | Clear pause and any kill-switch pause (the drawdown peak restarts from the next equity mark) |
 
 ## Going live (only after a good paper run)

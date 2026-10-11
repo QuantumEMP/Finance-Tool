@@ -1,4 +1,6 @@
-from agent.bot import is_owner, is_owner_update, keyboard, parse_callback
+from decimal import Decimal
+
+from agent.bot import is_owner, is_owner_update, keyboard, parse_callback, parse_cash_flow
 
 PID = "a" * 32
 
@@ -30,3 +32,13 @@ def test_is_owner_update():
 def test_keyboard_callback_data():
     row = keyboard(PID).inline_keyboard[0]
     assert [b.callback_data for b in row] == [f"approve:{PID}", f"reject:{PID}"]
+
+
+def test_parse_cash_flow():
+    accounts = ["alpaca", "luno"]
+    assert parse_cash_flow(["luno", "1,500.50"], accounts) == ("luno", Decimal("1500.50"))
+    assert "Unknown account" in parse_cash_flow(["x", "1"], accounts)
+    assert "not a number" in parse_cash_flow(["luno", "abc"], accounts)
+    for bad in (["luno", "-5"], ["luno", "0"], ["luno", "NaN"], ["luno", "Infinity"]):
+        assert "positive" in parse_cash_flow(bad, accounts)
+    assert "account and an amount" in parse_cash_flow(["luno"], accounts)
