@@ -55,6 +55,7 @@ CREATE TABLE IF NOT EXISTS events (
     ts TEXT NOT NULL, account TEXT NOT NULL, kind TEXT NOT NULL, payload TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS equity_marks (account TEXT NOT NULL, ts TEXT NOT NULL, equity TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS cash_flows (account TEXT NOT NULL, ts TEXT NOT NULL, amount TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS flags (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS paper_holdings (
     account TEXT NOT NULL, asset TEXT NOT NULL, qty TEXT NOT NULL, PRIMARY KEY (account, asset)
@@ -64,6 +65,11 @@ CREATE TABLE IF NOT EXISTS paper_orders (
     filled_qty TEXT NOT NULL, avg_price TEXT, reason TEXT NOT NULL
 );
 """
+
+
+def _flows_after(flows: list[tuple[str, Decimal]], mark_ts: str) -> Decimal:
+    # Timestamps share one fixed-width UTC format, so string order is time order.
+    return sum((a for t, a in flows if t > mark_ts), Decimal(0))
 
 
 class Store:
@@ -157,6 +163,12 @@ class Store:
         rows = self._query("SELECT * FROM proposals WHERE created_at >= ? ORDER BY created_at", (ts(since),))
         return [self._to_proposal(r) for r in rows]
 
+    def filled_proposals(self, account: str) -> list[Proposal]:
+        """Every proposal that filled at least partly, oldest first."""
+        rows = self._query("SELECT * FROM proposals WHERE account = ? AND state IN (?, ?) ORDER BY created_at",
+                           (account, ProposalState.FILLED.value, ProposalState.PARTIALLY_FILLED.value))
+        return [self._to_proposal(r) for r in rows]
+
     def count_proposals(self, account: str, since: datetime, states: Iterable[ProposalState]) -> int:
         values = [s.value for s in states]
         rows = self._query(
@@ -199,34 +211,61 @@ class Store:
         self._write("INSERT INTO equity_marks (account, ts, equity) VALUES (?,?,?)",
                     (account, ts(now), str(equity)))
 
+    # Every comparison of an old mark with today's equity adds the deposits (minus
+    # withdrawals) made since that mark, so moving money in or out never looks like a
+    # gain or a loss to the risk limits.
+
     def peak_equity(self, account: str) -> Decimal | None:
-        """Highest equity mark since the last peak reset (or ever, if never reset)."""
+        """Highest flow-adjusted equity mark since the last peak reset (or ever)."""
         since = self.get_flag(f"peak_reset:{account}") or ""
-        rows = self._query("SELECT equity FROM equity_marks WHERE account = ? AND ts >= ?",
+        rows = self._query("SELECT ts, equity FROM equity_marks WHERE account = ? AND ts >= ?",
                            (account, since))
-        return max((Decimal(r["equity"]) for r in rows), default=None)
+        flows = self._flows(account)
+        return max((Decimal(r["equity"]) + _flows_after(flows, r["ts"]) for r in rows), default=None)
 
     def reset_peak(self, account: str, now: datetime) -> None:
         """Start a new drawdown baseline: only marks from `now` on count toward the peak."""
         self.set_flag(f"peak_reset:{account}", ts(now))
 
     def first_equity_since(self, account: str, since: datetime) -> Decimal | None:
+        """First mark at or after `since`, flow-adjusted to now."""
         rows = self._query(
-            "SELECT equity FROM equity_marks WHERE account = ? AND ts >= ? ORDER BY ts LIMIT 1",
+            "SELECT ts, equity FROM equity_marks WHERE account = ? AND ts >= ? ORDER BY ts LIMIT 1",
             (account, ts(since)))
-        return Decimal(rows[0]["equity"]) if rows else None
+        return self._adjusted(account, rows[0]) if rows else None
 
     def last_equity_before(self, account: str, before: datetime) -> Decimal | None:
+        """Last mark before `before`, flow-adjusted to now."""
         rows = self._query(
-            "SELECT equity FROM equity_marks WHERE account = ? AND ts < ? ORDER BY ts DESC LIMIT 1",
+            "SELECT ts, equity FROM equity_marks WHERE account = ? AND ts < ? ORDER BY ts DESC LIMIT 1",
             (account, ts(before)))
-        return Decimal(rows[0]["equity"]) if rows else None
+        return self._adjusted(account, rows[0]) if rows else None
+
+    def _adjusted(self, account: str, row: sqlite3.Row) -> Decimal:
+        return Decimal(row["equity"]) + _flows_after(self._flows(account), row["ts"])
 
     def equity_marks_since(self, account: str, since: datetime) -> list[tuple[datetime, Decimal]]:
         rows = self._query(
             "SELECT ts, equity FROM equity_marks WHERE account = ? AND ts >= ? ORDER BY ts",
             (account, ts(since)))
         return [(parse_ts(r["ts"]), Decimal(r["equity"])) for r in rows]
+
+    # --- deposits and withdrawals -----------------------------------------
+
+    def add_cash_flow(self, account: str, now: datetime, amount: Decimal) -> None:
+        """Record a deposit (positive) or withdrawal (negative)."""
+        self._write("INSERT INTO cash_flows (account, ts, amount) VALUES (?,?,?)",
+                    (account, ts(now), str(amount)))
+
+    def _flows(self, account: str) -> list[tuple[str, Decimal]]:
+        rows = self._query("SELECT ts, amount FROM cash_flows WHERE account = ? ORDER BY ts", (account,))
+        return [(r["ts"], Decimal(r["amount"])) for r in rows]
+
+    def net_cash_flow(self, account: str, after: datetime, until: datetime | None = None) -> Decimal:
+        """Deposits minus withdrawals strictly after `after` (and at or before `until`)."""
+        end = ts(until) if until else None
+        return sum((a for t, a in self._flows(account) if t > ts(after) and (end is None or t <= end)),
+                   Decimal(0))
 
     # --- flags -------------------------------------------------------------
 

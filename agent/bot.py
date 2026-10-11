@@ -5,6 +5,7 @@ import asyncio
 import logging
 import re
 from datetime import datetime
+from decimal import Decimal, InvalidOperation
 from typing import Callable
 from zoneinfo import ZoneInfo
 
@@ -38,6 +39,22 @@ def is_owner_update(chat_id: int | None, user_id: int | None, owner: int) -> boo
     return is_owner(chat_id, owner) and user_id is not None and user_id == owner
 
 
+def parse_cash_flow(args: list[str], accounts: list[str]) -> tuple[str, Decimal] | str:
+    """(account, positive amount) from command args, or an error message."""
+    if len(args) != 2:
+        return "Give an account and an amount."
+    account, raw = args
+    if account not in accounts:
+        return f"Unknown account {account!r}. Options: {', '.join(accounts)}"
+    try:
+        amount = Decimal(raw.replace(",", ""))
+    except InvalidOperation:
+        return f"{raw!r} is not a number."
+    if not amount.is_finite() or amount <= 0:
+        return "The amount must be a positive number."
+    return account, amount
+
+
 def owner_filter(owner: int) -> filters.BaseFilter:
     """Same check as the buttons: the owner's chat AND the owner's user, so a group
     chat id never lets other members run commands."""
@@ -64,7 +81,8 @@ class TradingBot:
         owner_only = owner_filter(self._owner)
         for name, handler in [("run", self._cmd_run), ("status", self._cmd_status),
                               ("report", self._cmd_report), ("pause", self._cmd_pause),
-                              ("resume", self._cmd_resume)]:
+                              ("resume", self._cmd_resume), ("deposit", self._cmd_deposit),
+                              ("withdraw", self._cmd_withdraw)]:
             app.add_handler(CommandHandler(name, handler, filters=owner_only))
         app.add_handler(CallbackQueryHandler(self._on_button))
         app.add_error_handler(self._on_error)
@@ -126,7 +144,8 @@ class TradingBot:
             except ValueError:
                 await update.effective_message.reply_text("Usage: /report [days]")
                 return
-        text = await asyncio.to_thread(report_text, self._store, list(self._runtimes), self._now(), days)
+        text = await asyncio.to_thread(report_text, self._store, list(self._runtimes), self._now(), days,
+                                       self._runtimes)
         await update.effective_message.reply_text(text)
 
     async def _cmd_pause(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -140,6 +159,25 @@ class TradingBot:
             text += (f" Drawdown peak reset for {', '.join(reset)}: the kill switch now measures"
                      " from the next equity mark.")
         await update.effective_message.reply_text(text)
+
+    async def _cmd_deposit(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        await self._cash_flow(update, context, sign=1)
+
+    async def _cmd_withdraw(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        await self._cash_flow(update, context, sign=-1)
+
+    async def _cash_flow(self, update: Update, context: ContextTypes.DEFAULT_TYPE, sign: int) -> None:
+        verb = "deposit" if sign > 0 else "withdraw"
+        parsed = parse_cash_flow(context.args or [], list(self._runtimes))
+        if isinstance(parsed, str):
+            await update.effective_message.reply_text(f"{parsed}\nUsage: /{verb} <account> <amount>")
+            return
+        account, amount = parsed
+        await asyncio.to_thread(self._store.add_cash_flow, account, self._now(), sign * amount)
+        ccy = self._runtimes[account].config.quote_currency
+        await update.effective_message.reply_text(
+            f"Recorded a {'deposit' if sign > 0 else 'withdrawal'} of {amount:,.2f} {ccy} for {account}. "
+            "Risk limits and /report will treat it as a cash flow, not a gain or loss.")
 
     # --- buttons -------------------------------------------------------------
 
