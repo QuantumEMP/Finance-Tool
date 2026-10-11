@@ -60,13 +60,15 @@ def check_order(order: ProposedOrder, ctx: RiskContext) -> str | None:
         return "invalid quantity or price"
     if ctx.orders_today >= lim.max_orders_per_day:
         return f"daily order limit reached ({lim.max_orders_per_day})"
-    equity, value = pf.equity, order.value
-    if value > equity * pct(lim.max_order_pct) * TOLERANCE:
-        return f"order value {value:.2f} exceeds {lim.max_order_pct}% of equity"
     if order.side is Side.SELL:
+        # Sells only reduce exposure, so the order-size cap doesn't apply:
+        # otherwise a position above max_order_pct could never be exited.
         if order.qty > pf.positions.get(order.symbol, Decimal(0)):
             return "cannot sell more than is held (no shorting)"
         return None
+    equity, value = pf.equity, order.value
+    if value > equity * pct(lim.max_order_pct) * TOLERANCE:
+        return f"order value {value:.2f} exceeds {lim.max_order_pct}% of equity"
     if pf.position_value(order.symbol) + value > equity * pct(lim.max_position_pct) * TOLERANCE:
         return f"position would exceed {lim.max_position_pct}% of equity"
     if pf.cash - value < equity * pct(lim.min_cash_reserve_pct) / TOLERANCE:

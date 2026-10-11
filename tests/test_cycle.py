@@ -132,3 +132,14 @@ def test_news_exception_becomes_empty_headlines(env):
     runner._news = Boom()
     res = runner.run(rt)
     assert len(res.proposals) == 1
+
+
+def test_full_exit_of_large_position_is_proposed(env):
+    # 20 SPY @ 100 is 20% of equity, twice the 10% order cap; a confident SELL must exit it.
+    store, clock, broker, _, make = env
+    broker.cash, broker.positions = Decimal("8000"), {"SPY": Decimal("20")}
+    runner, rt = make(FakeAnalyst({"SPY": ("SELL", 1.0)}))
+    res = runner.run(rt)
+    assert res.vetoes == []
+    [p] = res.proposals
+    assert (p.order.side, p.order.qty) == (Side.SELL, Decimal("20"))
