@@ -21,6 +21,9 @@ def test_repo_config_loads_with_spec_defaults():
     assert luno.risk.max_position_pct == Decimal("10")
     assert luno.risk.max_drift_pct == Decimal("1.5")
     assert luno.paper_fee_pct == Decimal("0.6")
+    # No fee_pct set: Luno estimates fees from paper_fee_pct, Alpaca is commission-free.
+    assert luno.trading_fee_pct == Decimal("0.6") and alpaca.trading_fee_pct == Decimal("0")
+    assert luno.model_copy(update={"fee_pct": Decimal("0.25")}).trading_fee_pct == Decimal("0.25")
     assert cfg.analyst_model == "claude-opus-5-5"
 
 

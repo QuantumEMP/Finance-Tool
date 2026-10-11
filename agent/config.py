@@ -61,13 +61,23 @@ class AccountConfig(BaseModel):
     periods_per_year: int
     paper_starting_cash: Decimal = Decimal("10000")
     paper_fee_pct: Decimal = Decimal("0.5")
+    # Estimated fee per trade, in percent of order value. Used for sizing, the cash
+    # reserve check and the estimate shown on proposals. Unset: Luno uses
+    # paper_fee_pct, Alpaca 0 (commission-free).
+    fee_pct: Decimal | None = None
     schedule: Schedule
     risk: RiskLimits
 
-    @field_validator("paper_starting_cash", "paper_fee_pct", mode="before")
+    @field_validator("paper_starting_cash", "paper_fee_pct", "fee_pct", mode="before")
     @classmethod
     def floats_as_text(cls, v):
         return _float_as_text(v)
+
+    @property
+    def trading_fee_pct(self) -> Decimal:
+        if self.fee_pct is not None:
+            return self.fee_pct
+        return self.paper_fee_pct if self.venue == "luno" else Decimal(0)
 
 
 class AppConfig(BaseModel):

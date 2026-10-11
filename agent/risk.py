@@ -26,6 +26,7 @@ class RiskContext:
     day_start_equity: Decimal | None
     peak_equity: Decimal | None
     paused: bool
+    fee_pct: Decimal = Decimal(0)
 
 
 def check_account(ctx: RiskContext) -> Halt | None:
@@ -71,6 +72,6 @@ def check_order(order: ProposedOrder, ctx: RiskContext) -> str | None:
         return f"order value {value:.2f} exceeds {lim.max_order_pct}% of equity"
     if pf.position_value(order.symbol) + value > equity * pct(lim.max_position_pct) * TOLERANCE:
         return f"position would exceed {lim.max_position_pct}% of equity"
-    if pf.free_cash - value < equity * pct(lim.min_cash_reserve_pct) / TOLERANCE:
+    if pf.free_cash - value * (1 + pct(ctx.fee_pct)) < equity * pct(lim.min_cash_reserve_pct) / TOLERANCE:
         return f"would breach the {lim.min_cash_reserve_pct}% cash reserve"
     return None

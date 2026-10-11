@@ -94,7 +94,8 @@ class CycleRunner:
             res.alerts.append(f"{cfg.name}: analyst failed, holding everything: {analysis.error}")
 
         pending = store.open_symbols(cfg.name)
-        orders = [o for o in propose_orders(cfg.name, analysis.signals, portfolio, constraints, cfg.risk)
+        orders = [o for o in propose_orders(cfg.name, analysis.signals, portfolio, constraints, cfg.risk,
+                                          cfg.trading_fee_pct)
                   if o.symbol not in pending]
         orders_today = ctx.orders_today
         for order in orders:

@@ -93,3 +93,10 @@ def test_drawdown_kill_switch_takes_precedence():
 
 def test_zero_equity_halts():
     assert check_account(ctx(cash="0", prices={})) is not None
+
+
+def test_cash_reserve_includes_the_fee():
+    # 10000 equity, 1500 cash, 1000 reserve: a 500 buy fits exactly, but not with a 1% fee on top.
+    assert check_order(order(qty="5"), ctx(cash="1500", positions={"VTI": D("85")})) is None
+    c = ctx(cash="1500", positions={"VTI": D("85")}, fee_pct=D("1"))
+    assert "cash reserve" in check_order(order(qty="5"), c)

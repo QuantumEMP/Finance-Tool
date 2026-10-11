@@ -5,7 +5,7 @@ from collections import Counter
 from datetime import datetime, timedelta
 from decimal import Decimal
 
-from agent.models import Proposal, ProposalState
+from agent.models import ZERO, Proposal, ProposalState, pct
 from agent.runtime import AccountRuntime, day_start
 from agent.store import Store
 
@@ -16,14 +16,15 @@ def money(x: Decimal) -> str:
     return f"{x:,.2f}"
 
 
-def format_proposal(p: Proposal, currency: str, mode: str) -> str:
+def format_proposal(p: Proposal, currency: str, mode: str, fee_pct: Decimal = ZERO) -> str:
     o = p.order
     tag = "🧪 PAPER" if mode == "paper" else "💰 LIVE"
     reasoning = o.reasoning if len(o.reasoning) <= MAX_REASONING else o.reasoning[:MAX_REASONING] + "…"
+    fee = f", est. fee {money(o.value * pct(fee_pct))} {currency}" if fee_pct else ""
     return (
         f"{tag} · {o.account}\n"
         f"{o.side.value} {format(o.qty, 'f')} {o.symbol} @ {format(o.limit_price, 'f')} {currency}\n"
-        f"≈ {money(o.value)} {currency} ({p.pct_of_equity:.1f}% of account)\n"
+        f"≈ {money(o.value)} {currency} ({p.pct_of_equity:.1f}% of account{fee})\n"
         f"Confidence {o.confidence:.2f}\n\n"
         f"{reasoning}\n\n"
         f"Expires {p.expires_at:%H:%M} UTC"

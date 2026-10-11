@@ -23,6 +23,12 @@ def test_format_proposal():
     assert "0.72" in text and "Uptrend" in text and "15:00 UTC" in text
 
 
+def test_format_proposal_shows_estimated_fee():
+    assert "fee" not in format_proposal(proposal(), "ZAR", "paper")
+    text = format_proposal(proposal(), "ZAR", "paper", Decimal("0.6"))
+    assert "4.0% of account, est. fee 14.40 ZAR" in text
+
+
 def test_format_proposal_live_tag_and_truncation():
     text = format_proposal(proposal(reasoning="x" * 5000), "ZAR", "live")
     assert "LIVE" in text and len(text) < 1500

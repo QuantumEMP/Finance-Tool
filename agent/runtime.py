@@ -64,4 +64,5 @@ def risk_context(store: Store, cfg: AccountConfig, portfolio: Portfolio, now: da
         day_start_equity=reference,
         peak_equity=store.peak_equity(cfg.name),
         paused=is_paused(store, cfg.name),
+        fee_pct=cfg.trading_fee_pct,
     )

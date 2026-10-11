@@ -36,6 +36,7 @@ accounts:
     periods_per_year: 365
     paper_starting_cash: 10000
     paper_fee_pct: 0.6
+    # fee_pct: 0.6                  # estimated fee per trade for sizing; defaults to paper_fee_pct
     schedule:
       run_at: "09:00"
       timezone: Africa/Johannesburg

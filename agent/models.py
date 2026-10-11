@@ -53,6 +53,7 @@ class OrderConstraints:
     min_qty: Decimal
     qty_step: Decimal
     price_tick: Decimal
+    min_notional: Decimal = ZERO  # smallest order value the venue accepts
 
 
 @dataclass(frozen=True)
