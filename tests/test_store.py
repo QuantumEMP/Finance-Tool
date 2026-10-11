@@ -121,3 +121,14 @@ def test_last_equity_before_and_open_symbols(store):
     store.add_proposal(_proposal("c" * 32, "VTI"))
     store.add_proposal(_proposal("d" * 32, "IWM", state=PS.FILLED))
     assert store.open_symbols("test") == {"SPY", "QQQ", "VTI"}
+
+
+def test_reset_peak_ignores_earlier_marks(store):
+    store.mark_equity("test", T0 - timedelta(days=1), Decimal("120"))
+    store.mark_equity("other", T0 - timedelta(days=1), Decimal("500"))
+    store.reset_peak("test", T0)
+    assert store.peak_equity("test") is None
+    store.mark_equity("test", T0, Decimal("90"))
+    store.mark_equity("test", T0 + timedelta(hours=1), Decimal("95"))
+    assert store.peak_equity("test") == Decimal("95")
+    assert store.peak_equity("other") == Decimal("500")

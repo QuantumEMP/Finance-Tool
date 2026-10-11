@@ -62,7 +62,7 @@ times and risk limits, then run `sudo systemctl restart finance-agent`.
 | `/status` | Mode, balances, positions, paused state |
 | `/report [days]` | Proposals, fills and equity change (default 7 days) |
 | `/pause` | Stop all proposals and executions immediately |
-| `/resume` | Clear pause and any kill-switch pause |
+| `/resume` | Clear pause and any kill-switch pause (the drawdown peak restarts from the next equity mark) |
 
 ## Going live (only after a good paper run)
 

@@ -35,6 +35,15 @@ def test_order_too_large():
     assert "exceeds" in check_order(order(qty="11"), ctx())
 
 
+def test_cash_reserve_uses_free_cash():
+    # 1500 cash but 500 is held by an open buy: a 501 buy leaves 499 free, under the 1000 reserve.
+    pf = Portfolio(D("1500"), {"VTI": D("85")}, {"SPY": D("100"), "VTI": D("100")},
+                   spendable=D("1000"))
+    c = ctx(portfolio=pf)
+    assert check_order(order(qty="5"), ctx(cash="1500", positions={"VTI": D("85")})) is None
+    assert "cash reserve" in check_order(order(qty="5"), c)
+
+
 def test_position_cap():
     c = ctx(cash="8500", positions={"SPY": D("15")})
     assert "position" in check_order(order(qty="6"), c)
@@ -53,6 +62,19 @@ def test_sell_more_than_held():
     c = ctx(cash="9000", positions={"SPY": D("3")})
     assert "shorting" in check_order(order(qty="4", side=Side.SELL), c)
     assert check_order(order(qty="3", side=Side.SELL), c) is None
+
+
+def test_sell_larger_than_order_cap_passes():
+    # 20 SPY @ 100 is 20% of equity, above the 10% order cap; a full exit must still pass.
+    c = ctx(cash="8000", positions={"SPY": D("20")})
+    assert check_order(order(qty="20", side=Side.SELL), c) is None
+
+
+def test_sell_still_subject_to_account_checks():
+    c = ctx(cash="8000", positions={"SPY": D("20")}, paused=True)
+    assert "paused" in check_order(order(qty="20", side=Side.SELL), c)
+    c = ctx(cash="8000", positions={"SPY": D("20")}, orders_today=5)
+    assert "daily order limit" in check_order(order(qty="20", side=Side.SELL), c)
 
 
 def test_paused():

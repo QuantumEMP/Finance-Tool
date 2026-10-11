@@ -21,12 +21,14 @@ class FakeTrading:
         self.submitted = []
         self.orders = {}
         self.cancelled = []
+        self.account = SimpleNamespace(cash="1500.50", buying_power="1500.50",
+                                       non_marginable_buying_power="1500.50")
 
     def get_clock(self):
         return SimpleNamespace(is_open=True)
 
     def get_account(self):
-        return SimpleNamespace(cash="1500.50")
+        return self.account
 
     def get_all_positions(self):
         return [SimpleNamespace(symbol="SPY", qty="3"), SimpleNamespace(symbol="TSLA", qty="1")]
@@ -66,6 +68,24 @@ def test_portfolio_only_allowlisted(broker):
     assert pf.cash == D("1500.50")
     assert pf.positions == {"SPY": D("3")}
     assert pf.prices == {"SPY": D("101.5"), "QQQ": D("101.5")}
+
+
+def test_open_buy_order_reduces_free_cash_not_equity(broker):
+    # Alpaca leaves `cash` alone while a buy rests; buying power drops by the order value.
+    broker._trading.account = SimpleNamespace(cash="1500.50", buying_power="999.50",
+                                              non_marginable_buying_power="999.50")
+    pf = broker.get_portfolio(["SPY"])
+    assert pf.cash == D("1500.50") and pf.free_cash == D("999.50")
+    assert pf.equity == D("1500.50") + 3 * D("101.5")
+
+
+def test_margin_is_never_spendable(broker):
+    broker._trading.account = SimpleNamespace(cash="1500.50", buying_power="6002.00",
+                                              non_marginable_buying_power="1200.00")
+    assert broker.get_portfolio(["SPY"]).free_cash == D("1200.00")
+    broker._trading.account = SimpleNamespace(cash="1500.50", buying_power="6002.00",
+                                              non_marginable_buying_power=None)
+    assert broker.get_portfolio(["SPY"]).free_cash == D("1500.50")
 
 
 def test_candles(broker):

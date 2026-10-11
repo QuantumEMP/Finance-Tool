@@ -31,6 +31,13 @@ def test_target_buy_value_takes_tightest_limit():
     assert target_buy_value(0.8, eq, D("0"), D("900"), LIMITS) == D("0")           # below reserve
 
 
+def test_buy_sizing_uses_free_cash():
+    # 1500 cash, 400 held by an open buy, 1000 reserve: only 100 left to spend, so no order.
+    pf = Portfolio(D("1500"), {"QQQ": D("85")}, {"SPY": D("100"), "QQQ": D("100")},
+                   spendable=D("1100"))
+    assert run([sig("SPY", "BUY", 0.9)], pf) == []
+
+
 def test_buy_sizing():
     orders = run([sig("SPY", "BUY", 0.8)], Portfolio(D("10000"), {}, {"SPY": D("100")}))
     assert len(orders) == 1
