@@ -36,7 +36,7 @@ def compute(symbol: str, closes: Sequence[float], periods_per_year: int) -> Indi
     volatility = None
     window = closes[-31:]
     if len(window) == 31 and all(c > 0 for c in window):
-        returns = [math.log(b / a) for a, b in zip(window, window[1:])]
+        returns = [math.log(b / a) for a, b in zip(window, window[1:], strict=False)]
         volatility = statistics.stdev(returns) * math.sqrt(periods_per_year) * 100
 
     high = max(closes[-90:])

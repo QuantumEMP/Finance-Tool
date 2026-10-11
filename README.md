@@ -95,5 +95,8 @@ against the live API docs page. Before enabling live mode for Luno:
 ```bash
 python -m venv .venv
 .venv/bin/pip install -e ".[dev]"     # Windows: .venv\Scripts\pip
+.venv/bin/ruff check .
 .venv/bin/python -m pytest
 ```
+
+GitHub Actions runs the same lint and tests on every push and pull request.
