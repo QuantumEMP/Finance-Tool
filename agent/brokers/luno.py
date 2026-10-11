@@ -2,6 +2,7 @@
 so paper mode wraps this in PaperBroker and only its read methods are used."""
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
@@ -9,6 +10,8 @@ import httpx
 
 from agent.brokers.base import BrokerError
 from agent.models import ZERO, Candle, OrderConstraints, OrderResult, OrderStatus, Portfolio, Side
+
+log = logging.getLogger(__name__)
 
 
 class LunoError(BrokerError):
@@ -73,9 +76,12 @@ class LunoBroker:
         return True  # 24/7
 
     def get_portfolio(self, symbols: list[str]) -> Portfolio:
+        total: dict[str, Decimal] = {}
         available: dict[str, Decimal] = {}
         for b in self._get("/api/1/balance").get("balance", []):
-            free = Decimal(b["balance"]) - Decimal(b.get("reserved") or "0")
+            bal = Decimal(b["balance"])
+            free = bal - Decimal(b.get("reserved") or "0")
+            total[b["asset"]] = total.get(b["asset"], ZERO) + bal
             available[b["asset"]] = available.get(b["asset"], ZERO) + free
         positions = {}
         for s in symbols:
@@ -83,7 +89,24 @@ class LunoBroker:
             if qty > 0:
                 positions[s] = qty
         prices = {s: self.get_price(s) for s in symbols}
-        return Portfolio(available.get(self._quote, ZERO), positions, prices)
+        # Equity covers the whole wallet: units reserved by open sells, and coins that
+        # aren't on the allowlist. Assets with no market in the quote currency are skipped.
+        traded = {self._base_asset(s): s for s in symbols}
+        other = ZERO
+        for asset, bal in total.items():
+            if asset == self._quote:
+                continue
+            untradeable = bal - positions.get(traded[asset], ZERO) if asset in traded else bal
+            if untradeable <= 0:
+                continue
+            try:
+                price = prices[traded[asset]] if asset in traded else self.get_price(asset + self._quote)
+            except LunoError as e:
+                log.warning("cannot value %s %s in %s: %s", untradeable, asset, self._quote, e)
+                continue
+            other += untradeable * price
+        return Portfolio(total.get(self._quote, ZERO), positions, prices,
+                         spendable=available.get(self._quote, ZERO), other_value=other)
 
     def get_price(self, symbol: str) -> Decimal:
         t = self._get("/api/1/ticker", pair=symbol)

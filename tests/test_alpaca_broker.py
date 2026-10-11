@@ -31,7 +31,8 @@ class FakeTrading:
         return self.account
 
     def get_all_positions(self):
-        return [SimpleNamespace(symbol="SPY", qty="3"), SimpleNamespace(symbol="TSLA", qty="1")]
+        return [SimpleNamespace(symbol="SPY", qty="3", market_value="304.5"),
+                SimpleNamespace(symbol="TSLA", qty="1", market_value="250.25")]
 
     def submit_order(self, req):
         self.submitted.append(req)
@@ -63,11 +64,14 @@ def broker():
     return AlpacaBroker(FakeTrading(), FakeData())
 
 
-def test_portfolio_only_allowlisted(broker):
+def test_portfolio_trades_allowlisted_but_values_everything(broker):
     pf = broker.get_portfolio(["SPY", "QQQ"])
     assert pf.cash == D("1500.50")
     assert pf.positions == {"SPY": D("3")}
     assert pf.prices == {"SPY": D("101.5"), "QQQ": D("101.5")}
+    # TSLA isn't tradeable here but still counts toward equity.
+    assert pf.other_value == D("250.25")
+    assert pf.equity == D("1500.50") + 3 * D("101.5") + D("250.25")
 
 
 def test_open_buy_order_reduces_free_cash_not_equity(broker):
@@ -76,7 +80,7 @@ def test_open_buy_order_reduces_free_cash_not_equity(broker):
                                               non_marginable_buying_power="999.50")
     pf = broker.get_portfolio(["SPY"])
     assert pf.cash == D("1500.50") and pf.free_cash == D("999.50")
-    assert pf.equity == D("1500.50") + 3 * D("101.5")
+    assert pf.equity == D("1500.50") + 3 * D("101.5") + D("250.25")
 
 
 def test_margin_is_never_spendable(broker):

@@ -30,12 +30,36 @@ def broker(routes):
     return LunoBroker("id", "secret", "ZAR", http=http)
 
 
-def test_portfolio_uses_available_not_reserved():
+def test_portfolio_trades_available_but_values_reserved():
     b = broker({("GET", "/api/1/balance"): BALANCES, ("GET", "/api/1/ticker"): TICKER})
     pf = b.get_portfolio(["XBTZAR", "ETHZAR"])
-    assert pf.cash == D("4000")
+    # Only unreserved units/cash can be used for new orders...
     assert pf.positions == {"XBTZAR": D("0.08")}
+    assert pf.free_cash == D("4000")
     assert pf.prices["XBTZAR"] == D("1000100")
+    # ...but reserved ones are still part of the account's equity.
+    assert pf.cash == D("5000")
+    assert pf.other_value == D("0.02") * D("1000100")
+    assert pf.equity == D("5000") + D("0.1") * D("1000100")
+
+
+def test_portfolio_values_coins_outside_the_allowlist():
+    balances = {"balance": BALANCES["balance"] + [
+        {"asset": "SOL", "balance": "2", "reserved": "0", "unconfirmed": "0"},
+        {"asset": "XYZ", "balance": "5", "reserved": "0", "unconfirmed": "0"},  # no ZAR market
+    ]}
+
+    def ticker(request):
+        pair = request.url.params["pair"]
+        if pair == "XYZZAR":
+            return httpx.Response(404, json={"error_code": "ErrMarketNotFound"})
+        return httpx.Response(200, json={**TICKER, "pair": pair,
+                                         **({"bid": "2999", "ask": "3001"} if pair == "SOLZAR" else {})})
+
+    b = broker({("GET", "/api/1/balance"): balances, ("GET", "/api/1/ticker"): ticker})
+    pf = b.get_portfolio(["XBTZAR"])
+    assert "SOLZAR" not in pf.positions
+    assert pf.other_value == D("0.02") * D("1000100") + 2 * D("3000")
 
 
 def test_price_falls_back_to_last_trade_when_book_empty():

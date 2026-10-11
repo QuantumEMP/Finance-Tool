@@ -70,12 +70,16 @@ class Portfolio:
 
     `cash` is the full cash balance (it counts toward equity). `spendable` is the part
     not already tied up in open buy orders; None means all of `cash` is free.
+    `other_value` is what everything the agent doesn't trade is worth (holdings outside
+    the allowlist, or units locked in open sell orders): it counts toward equity, so
+    percentages are taken of the whole account, but it can't be traded.
     """
 
     cash: Decimal
     positions: dict[str, Decimal] = field(default_factory=dict)
     prices: dict[str, Decimal] = field(default_factory=dict)
     spendable: Decimal | None = None
+    other_value: Decimal = ZERO
 
     @property
     def free_cash(self) -> Decimal:
@@ -87,7 +91,8 @@ class Portfolio:
 
     @property
     def equity(self) -> Decimal:
-        return self.cash + sum((self.position_value(s) for s in self.positions), ZERO)
+        return (self.cash + self.other_value
+                + sum((self.position_value(s) for s in self.positions), ZERO))
 
 
 @dataclass(frozen=True)

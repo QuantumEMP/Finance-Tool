@@ -52,10 +52,15 @@ class AlpacaBroker:
         # `cash` doesn't drop while a buy order is open; buying power does. Use the
         # non-marginable figure so margin never counts as spendable cash.
         power = account.non_marginable_buying_power or account.buying_power
-        positions = {p.symbol: _dec(p.qty) for p in self._trading.get_all_positions()
-                     if p.symbol in symbols}
+        positions, other = {}, Decimal(0)
+        for p in self._trading.get_all_positions():
+            if p.symbol in symbols:
+                positions[p.symbol] = _dec(p.qty)
+            elif p.market_value is not None:
+                # Not ours to trade, but part of the account: equity must include it.
+                other += _dec(p.market_value)
         return Portfolio(_dec(account.cash), positions, {s: self.get_price(s) for s in symbols},
-                         spendable=_dec(power) if power is not None else None)
+                         spendable=_dec(power) if power is not None else None, other_value=other)
 
     def get_price(self, symbol: str) -> Decimal:
         req = StockLatestTradeRequest(symbol_or_symbols=symbol, feed=DataFeed.IEX)
