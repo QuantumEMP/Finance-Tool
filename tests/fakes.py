@@ -32,7 +32,7 @@ def make_account(name="test", allowlist=("SPY", "QQQ"), **risk_overrides) -> Acc
 # --- appended in Task 6 ---
 from datetime import datetime, timedelta, timezone
 
-from agent.models import Candle, OrderResult, OrderStatus, Portfolio
+from agent.models import Candle, OrderResult, OrderStatus, Portfolio, Side
 
 
 class Clock:
@@ -73,9 +73,14 @@ class FakeBroker:
 
     def get_portfolio(self, symbols):
         self._check()
+        # Like a real venue, open buy orders hold back cash without reducing the balance.
+        held = sum((qty * price for (_, side, qty, price, cid) in self.placed
+                    if side is Side.BUY and cid in self.orders
+                    and self.orders[cid].status is OrderStatus.SUBMITTED), Decimal(0))
         return Portfolio(self.cash,
                          {s: q for s, q in self.positions.items() if s in symbols and q > 0},
-                         {s: self.prices[s] for s in symbols if s in self.prices})
+                         {s: self.prices[s] for s in symbols if s in self.prices},
+                         spendable=self.cash - held)
 
     def get_price(self, symbol):
         self._check()

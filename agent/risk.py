@@ -69,6 +69,6 @@ def check_order(order: ProposedOrder, ctx: RiskContext) -> str | None:
         return None
     if pf.position_value(order.symbol) + value > equity * pct(lim.max_position_pct) * TOLERANCE:
         return f"position would exceed {lim.max_position_pct}% of equity"
-    if pf.cash - value < equity * pct(lim.min_cash_reserve_pct) / TOLERANCE:
+    if pf.free_cash - value < equity * pct(lim.min_cash_reserve_pct) / TOLERANCE:
         return f"would breach the {lim.min_cash_reserve_pct}% cash reserve"
     return None
