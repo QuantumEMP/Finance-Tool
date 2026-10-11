@@ -12,7 +12,10 @@ is the default for both accounts.
 1. Code computes indicators (SMA20/50, 14-day momentum, 30-day volatility, drawdown).
 2. Claude reads the indicators and recent headlines and returns BUY/SELL/HOLD,
    a confidence score and short reasoning for each allowlisted symbol.
-3. Code sizes orders from confidence and the risk limits in `config.yaml`.
+3. Code sizes orders from confidence and the risk limits in `config.yaml`. The estimated
+   trading fee (`fee_pct`; Luno defaults to `paper_fee_pct`, Alpaca to 0) is kept out of the
+   cash reserve and shown on each proposal. Alpaca uses fractional shares where the asset
+   allows it, so a small account can still buy part of an expensive ETF.
 4. The risk guard can veto anything. Daily-loss halts and a drawdown kill switch pause the account.
    Equity is the whole account, including holdings outside the allowlist (which the agent
    never trades), and is recorded hourly. The daily-loss halt compares against the last

@@ -24,6 +24,10 @@ class FakeTrading:
         self.account = SimpleNamespace(cash="1500.50", buying_power="1500.50",
                                        non_marginable_buying_power="1500.50")
 
+    def get_asset(self, symbol):
+        self.asset_calls = getattr(self, "asset_calls", 0) + 1
+        return SimpleNamespace(symbol=symbol, fractionable=symbol != "BRK.A")
+
     def get_clock(self):
         return SimpleNamespace(is_open=True)
 
@@ -97,9 +101,22 @@ def test_candles(broker):
     assert c.close == D("1.5") and c.ts.year == 2026
 
 
-def test_whole_share_constraints(broker):
+def test_fractionable_asset_constraints(broker):
     c = broker.constraints("SPY")
-    assert (c.min_qty, c.qty_step, c.price_tick) == (D("1"), D("1"), D("0.01"))
+    assert (c.min_qty, c.qty_step, c.price_tick, c.min_notional) == (
+        D("0.0001"), D("0.0001"), D("0.01"), D("1"))
+    broker.constraints("SPY")
+    assert broker._trading.asset_calls == 1  # cached
+
+
+def test_non_fractionable_asset_trades_whole_shares(broker):
+    c = broker.constraints("BRK.A")
+    assert (c.min_qty, c.qty_step, c.price_tick, c.min_notional) == (D("1"), D("1"), D("0.01"), D("0"))
+
+
+def test_fractional_order_request(broker):
+    broker.place_limit_order("SPY", Side.BUY, D("0.2995"), D("601.20"), CID)
+    assert float(broker._trading.submitted[0].qty) == 0.2995
 
 
 def test_place_limit_order_request(broker):

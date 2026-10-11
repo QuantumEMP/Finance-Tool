@@ -16,21 +16,23 @@ def round_up(x: Decimal, step: Decimal) -> Decimal:
 
 
 def target_buy_value(confidence: float, equity: Decimal, position_value: Decimal,
-                     cash: Decimal, limits: RiskLimits) -> Decimal:
-    """Money to spend on one BUY: confidence-scaled order cap, bounded by the
-    position cap and by cash above the reserve. Never negative."""
+                     cash: Decimal, limits: RiskLimits, fee_pct: Decimal = ZERO) -> Decimal:
+    """Order value (before fees) for one BUY: confidence-scaled order cap, bounded by
+    the position cap and by cash above the reserve, after paying the fee. Never negative."""
     by_order = equity * pct(limits.max_order_pct) * Decimal(str(confidence))
     by_position = equity * pct(limits.max_position_pct) - position_value
-    by_cash = cash - equity * pct(limits.min_cash_reserve_pct)
+    by_cash = (cash - equity * pct(limits.min_cash_reserve_pct)) / (1 + pct(fee_pct))
     return max(ZERO, min(by_order, by_position, by_cash))
 
 
 def propose_orders(account: str, signals: dict[str, Signal], portfolio: Portfolio,
-                   constraints: dict[str, OrderConstraints], limits: RiskLimits) -> list[ProposedOrder]:
+                   constraints: dict[str, OrderConstraints], limits: RiskLimits,
+                   fee_pct: Decimal = ZERO) -> list[ProposedOrder]:
     equity = portfolio.equity
     if equity <= 0:
         return []
     buffer = pct(limits.limit_buffer_pct)
+    fee = pct(fee_pct)
     cash_left = portfolio.free_cash
     orders: list[ProposedOrder] = []
 
@@ -46,13 +48,13 @@ def propose_orders(account: str, signals: dict[str, Signal], portfolio: Portfoli
         if sig.action == "BUY":
             limit = round_down(price * (1 + buffer), c.price_tick)
             value = target_buy_value(sig.confidence, equity, portfolio.position_value(symbol),
-                                     cash_left, limits)
+                                     cash_left, limits, fee_pct)
             if limit <= 0:
                 continue
             qty = round_down(value / limit, c.qty_step)
-            if qty <= 0 or qty < c.min_qty:
+            if qty <= 0 or qty < c.min_qty or qty * limit < c.min_notional:
                 continue
-            cash_left -= qty * limit
+            cash_left -= qty * limit * (1 + fee)
             side = Side.BUY
         else:
             held = portfolio.positions.get(symbol, ZERO)
@@ -64,6 +66,8 @@ def propose_orders(account: str, signals: dict[str, Signal], portfolio: Portfoli
             if qty <= 0 or qty < c.min_qty:
                 continue
             limit = round_up(price * (1 - buffer), c.price_tick)
+            if qty * limit < c.min_notional:
+                continue
             side = Side.SELL
 
         orders.append(ProposedOrder(account, symbol, side, qty, limit, price,

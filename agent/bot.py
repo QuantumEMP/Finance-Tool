@@ -93,7 +93,8 @@ class TradingBot:
             await self._send(context, f"{name}: skipped ({result.skipped_reason})")
             return
         for p in result.proposals:
-            msg = await self._send(context, format_proposal(p, rt.config.quote_currency, rt.mode),
+            msg = await self._send(context, format_proposal(p, rt.config.quote_currency, rt.mode,
+                                                   rt.config.trading_fee_pct),
                                    reply_markup=keyboard(p.id))
             await asyncio.to_thread(self._store.set_message_id, p.id, msg.message_id)
         if not result.proposals:
