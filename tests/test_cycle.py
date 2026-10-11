@@ -4,7 +4,7 @@ from decimal import Decimal
 import pytest
 
 from agent.cycle import CycleRunner
-from agent.models import ProposalState, Side
+from agent.models import Candle, ProposalState, Side
 from agent.runtime import AccountRuntime, resume
 from agent.store import Store
 from tests.fakes import Clock, FakeAnalyst, FakeBroker, FakeNews, make_account
@@ -186,3 +186,19 @@ def test_full_exit_of_large_position_is_proposed(env):
     assert res.vetoes == []
     [p] = res.proposals
     assert (p.order.side, p.order.qty) == (Side.SELL, Decimal("20"))
+
+
+def test_indicators_ignore_todays_in_progress_bar(env):
+    _, _, broker, _, make = env
+    # Daily bars stamped at midnight New York (04:00 UTC), as Alpaca returns them; the
+    # last one is today's, 30 minutes old, with a very different price.
+    start = datetime(2026, 7, 10, 4, 0, tzinfo=timezone.utc)
+    closes = [Decimal(100 + i) for i in range(89)] + [Decimal(500)]
+    bars = [Candle(start + timedelta(days=i), c, c, c, c, Decimal(1)) for i, c in enumerate(closes)]
+    assert bars[-1].ts.date() == T0.date()
+    broker.get_candles = lambda symbol, days: bars
+    analyst = FakeAnalyst({})
+    runner, rt = make(analyst)
+    runner.run(rt)
+    indicators = analyst.calls[0][2]
+    assert indicators["SPY"].last_close == 188.0

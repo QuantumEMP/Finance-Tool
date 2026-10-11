@@ -24,6 +24,10 @@ class FakeTrading:
         self.account = SimpleNamespace(cash="1500.50", buying_power="1500.50",
                                        non_marginable_buying_power="1500.50")
 
+    def get_asset(self, symbol):
+        self.asset_calls = getattr(self, "asset_calls", 0) + 1
+        return SimpleNamespace(symbol=symbol, fractionable=symbol != "BRK.A")
+
     def get_clock(self):
         return SimpleNamespace(is_open=True)
 
@@ -31,7 +35,8 @@ class FakeTrading:
         return self.account
 
     def get_all_positions(self):
-        return [SimpleNamespace(symbol="SPY", qty="3"), SimpleNamespace(symbol="TSLA", qty="1")]
+        return [SimpleNamespace(symbol="SPY", qty="3", market_value="304.5"),
+                SimpleNamespace(symbol="TSLA", qty="1", market_value="250.25")]
 
     def submit_order(self, req):
         self.submitted.append(req)
@@ -63,11 +68,14 @@ def broker():
     return AlpacaBroker(FakeTrading(), FakeData())
 
 
-def test_portfolio_only_allowlisted(broker):
+def test_portfolio_trades_allowlisted_but_values_everything(broker):
     pf = broker.get_portfolio(["SPY", "QQQ"])
     assert pf.cash == D("1500.50")
     assert pf.positions == {"SPY": D("3")}
     assert pf.prices == {"SPY": D("101.5"), "QQQ": D("101.5")}
+    # TSLA isn't tradeable here but still counts toward equity.
+    assert pf.other_value == D("250.25")
+    assert pf.equity == D("1500.50") + 3 * D("101.5") + D("250.25")
 
 
 def test_open_buy_order_reduces_free_cash_not_equity(broker):
@@ -76,7 +84,7 @@ def test_open_buy_order_reduces_free_cash_not_equity(broker):
                                               non_marginable_buying_power="999.50")
     pf = broker.get_portfolio(["SPY"])
     assert pf.cash == D("1500.50") and pf.free_cash == D("999.50")
-    assert pf.equity == D("1500.50") + 3 * D("101.5")
+    assert pf.equity == D("1500.50") + 3 * D("101.5") + D("250.25")
 
 
 def test_margin_is_never_spendable(broker):
@@ -93,9 +101,22 @@ def test_candles(broker):
     assert c.close == D("1.5") and c.ts.year == 2026
 
 
-def test_whole_share_constraints(broker):
+def test_fractionable_asset_constraints(broker):
     c = broker.constraints("SPY")
-    assert (c.min_qty, c.qty_step, c.price_tick) == (D("1"), D("1"), D("0.01"))
+    assert (c.min_qty, c.qty_step, c.price_tick, c.min_notional) == (
+        D("0.0001"), D("0.0001"), D("0.01"), D("1"))
+    broker.constraints("SPY")
+    assert broker._trading.asset_calls == 1  # cached
+
+
+def test_non_fractionable_asset_trades_whole_shares(broker):
+    c = broker.constraints("BRK.A")
+    assert (c.min_qty, c.qty_step, c.price_tick, c.min_notional) == (D("1"), D("1"), D("0.01"), D("0"))
+
+
+def test_fractional_order_request(broker):
+    broker.place_limit_order("SPY", Side.BUY, D("0.2995"), D("601.20"), CID)
+    assert float(broker._trading.submitted[0].qty) == 0.2995
 
 
 def test_place_limit_order_request(broker):

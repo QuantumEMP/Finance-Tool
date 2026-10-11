@@ -1,11 +1,12 @@
 """Test doubles and builders shared across test modules."""
 from __future__ import annotations
 
-from datetime import time
+from datetime import datetime, time, timedelta, timezone
 from decimal import Decimal
 
+from agent.analyst import AnalysisResult
 from agent.config import AccountConfig, RiskLimits, Schedule
-from agent.models import OrderConstraints
+from agent.models import Candle, OrderConstraints, OrderResult, OrderStatus, Portfolio, Side, Signal
 
 WHOLE = OrderConstraints(Decimal("1"), Decimal("1"), Decimal("0.01"))
 
@@ -27,12 +28,6 @@ def make_account(name="test", allowlist=("SPY", "QQQ"), **risk_overrides) -> Acc
         periods_per_year=252, schedule=Schedule(run_at=time(10, 0), timezone="UTC"),
         risk=make_limits(**risk_overrides),
     )
-
-
-# --- appended in Task 6 ---
-from datetime import datetime, timedelta, timezone
-
-from agent.models import Candle, OrderResult, OrderStatus, Portfolio, Side
 
 
 class Clock:
@@ -124,11 +119,6 @@ class FakeBroker:
         st = OrderStatus.PARTIALLY_FILLED if o.filled_qty > 0 else OrderStatus.REJECTED
         self.orders[client_order_id] = OrderResult(client_order_id, st, o.filled_qty, o.avg_price,
                                                    "canceled")
-
-
-# --- appended in Task 10 ---
-from agent.analyst import AnalysisResult
-from agent.models import Signal
 
 
 class FakeAnalyst:

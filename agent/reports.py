@@ -6,7 +6,7 @@ from collections import Counter
 from datetime import datetime, timedelta
 from decimal import Decimal
 
-from agent.models import Proposal, ProposalState, Side
+from agent.models import ZERO, Proposal, ProposalState, Side, pct
 from agent.pnl import build_book
 from agent.runtime import AccountRuntime, day_start
 from agent.store import Store
@@ -21,14 +21,15 @@ def money(x: Decimal) -> str:
     return f"{x:,.2f}"
 
 
-def format_proposal(p: Proposal, currency: str, mode: str) -> str:
+def format_proposal(p: Proposal, currency: str, mode: str, fee_pct: Decimal = ZERO) -> str:
     o = p.order
     tag = "🧪 PAPER" if mode == "paper" else "💰 LIVE"
     reasoning = o.reasoning if len(o.reasoning) <= MAX_REASONING else o.reasoning[:MAX_REASONING] + "…"
+    fee = f", est. fee {money(o.value * pct(fee_pct))} {currency}" if fee_pct else ""
     return (
         f"{tag} · {o.account}\n"
         f"{o.side.value} {format(o.qty, 'f')} {o.symbol} @ {format(o.limit_price, 'f')} {currency}\n"
-        f"≈ {money(o.value)} {currency} ({p.pct_of_equity:.1f}% of account)\n"
+        f"≈ {money(o.value)} {currency} ({p.pct_of_equity:.1f}% of account{fee})\n"
         f"Confidence {o.confidence:.2f}\n\n"
         f"{reasoning}\n\n"
         f"Expires {p.expires_at:%H:%M} UTC"
@@ -49,6 +50,8 @@ def status_text(store: Store, runtimes: dict[str, AccountRuntime]) -> str:
             continue
         ccy = rt.config.quote_currency
         lines.append(f"\n{header}\n  equity {money(pf.equity)} {ccy}, cash {money(pf.cash)} {ccy}")
+        if pf.other_value:
+            lines.append(f"  other holdings (not traded) ≈ {money(pf.other_value)} {ccy}")
         lots = build_book(store.filled_proposals(name)).lots
         for s, q in sorted(pf.positions.items()):
             line = f"  {s}: {format(q, 'f')} ≈ {money(pf.position_value(s))} {ccy}"
@@ -151,7 +154,8 @@ def _market_comparison(rt: AccountRuntime, proposals: list[Proposal], since: dat
     return lines
 
 
-def heartbeat_text(store: Store, runtimes: dict[str, AccountRuntime], now: datetime) -> str:
-    today = [p for p in store.proposals_since(day_start(now))]
+def heartbeat_text(store: Store, runtimes: dict[str, AccountRuntime], now: datetime,
+                   tz: str = "UTC") -> str:
+    today = store.proposals_since(day_start(now, tz))
     done = sum(p.state in (ProposalState.FILLED, ProposalState.PARTIALLY_FILLED) for p in today)
     return f"💓 Alive. Today: {len(today)} proposal(s), {done} filled.\n\n" + status_text(store, runtimes)

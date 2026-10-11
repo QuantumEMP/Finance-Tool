@@ -17,7 +17,7 @@ from agent.config import AppConfig
 from agent.cycle import CycleRunner
 from agent.executor import Executor
 from agent.reports import format_proposal, heartbeat_text, report_text, status_text
-from agent.runtime import AccountRuntime, resume
+from agent.runtime import AccountRuntime, mark_all_equity, resume
 from agent.store import Store
 
 log = logging.getLogger(__name__)
@@ -55,6 +55,12 @@ def parse_cash_flow(args: list[str], accounts: list[str]) -> tuple[str, Decimal]
     return account, amount
 
 
+def owner_filter(owner: int) -> filters.BaseFilter:
+    """Same check as the buttons: the owner's chat AND the owner's user, so a group
+    chat id never lets other members run commands."""
+    return filters.Chat(chat_id=owner) & filters.User(user_id=owner)
+
+
 def keyboard(pid: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([[
         InlineKeyboardButton("✅ Approve", callback_data=f"approve:{pid}"),
@@ -72,7 +78,7 @@ class TradingBot:
 
     def build(self) -> Application:
         app = Application.builder().token(self._token).build()
-        owner_only = filters.Chat(chat_id=self._owner)
+        owner_only = owner_filter(self._owner)
         for name, handler in [("run", self._cmd_run), ("status", self._cmd_status),
                               ("report", self._cmd_report), ("pause", self._cmd_pause),
                               ("resume", self._cmd_resume), ("deposit", self._cmd_deposit),
@@ -90,6 +96,7 @@ class TradingBot:
         jq.run_daily(self._job_heartbeat, time=hb.run_at.replace(tzinfo=ZoneInfo(hb.timezone)),
                      name="heartbeat")
         jq.run_repeating(self._job_housekeeping, interval=300, first=30, name="housekeeping")
+        jq.run_repeating(self._job_mark_equity, interval=3600, first=60, name="equity")
         return app
 
     async def _send(self, context: ContextTypes.DEFAULT_TYPE, text: str, **kwargs):
@@ -104,7 +111,8 @@ class TradingBot:
             await self._send(context, f"{name}: skipped ({result.skipped_reason})")
             return
         for p in result.proposals:
-            msg = await self._send(context, format_proposal(p, rt.config.quote_currency, rt.mode),
+            msg = await self._send(context, format_proposal(p, rt.config.quote_currency, rt.mode,
+                                                   rt.config.trading_fee_pct),
                                    reply_markup=keyboard(p.id))
             await asyncio.to_thread(self._store.set_message_id, p.id, msg.message_id)
         if not result.proposals:
@@ -187,10 +195,25 @@ class TradingBot:
         action, pid = parsed
         await query.answer("Working…")
         await query.edit_message_reply_markup(reply_markup=None)
-        fn = self._executor.approve if action == "approve" else self._executor.reject
-        outcome = await asyncio.to_thread(fn, pid)
+        text = await asyncio.to_thread(self._decide, action, pid)
         original = query.message.text if query.message else ""
-        await query.edit_message_text(f"{original}\n\n{outcome.message}")
+        await query.edit_message_text(f"{original}\n\n{text}")
+
+    def _decide(self, action: str, pid: str) -> str:
+        """Run approve/reject. The buttons are already gone, so an unexpected error must
+        still leave an outcome on the message rather than a silent dead end."""
+        fn = self._executor.approve if action == "approve" else self._executor.reject
+        try:
+            return fn(pid).message
+        except Exception as e:
+            log.exception("%s failed for %s", action, pid)
+            try:
+                p = self._store.get_proposal(pid)
+                state = p.state.value.lower() if p else "unknown"
+            except Exception:
+                state = "unknown"
+            return (f"⚠️ {action.capitalize()} failed ({type(e).__name__}: {e}). "
+                    f"The proposal is now {state}; check /status before trying again.")
 
     # --- jobs ----------------------------------------------------------------
 
@@ -210,8 +233,12 @@ class TradingBot:
         for outcome in await asyncio.to_thread(self._executor.reconcile):
             await self._send(context, outcome.message)
 
+    async def _job_mark_equity(self, context: ContextTypes.DEFAULT_TYPE) -> None:
+        await asyncio.to_thread(mark_all_equity, self._store, self._runtimes, self._now())
+
     async def _job_heartbeat(self, context: ContextTypes.DEFAULT_TYPE) -> None:
-        text = await asyncio.to_thread(heartbeat_text, self._store, self._runtimes, self._now())
+        text = await asyncio.to_thread(heartbeat_text, self._store, self._runtimes, self._now(),
+                                       self._config.heartbeat.timezone)
         await self._send(context, text)
 
     async def _on_error(self, update: object, context: ContextTypes.DEFAULT_TYPE) -> None:

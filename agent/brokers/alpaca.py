@@ -14,6 +14,7 @@ from alpaca.trading.requests import LimitOrderRequest
 
 from agent.models import Candle, OrderConstraints, OrderResult, OrderStatus, Portfolio, Side
 
+FRACTION = Decimal("0.0001")  # qty step for fractional shares
 _CLOSED = {"canceled", "expired", "rejected", "suspended", "stopped", "done_for_day"}
 
 
@@ -39,6 +40,7 @@ class AlpacaBroker:
 
     def __init__(self, trading, data) -> None:
         self._trading, self._data = trading, data
+        self._constraints: dict[str, OrderConstraints] = {}
 
     @classmethod
     def from_keys(cls, key: str, secret: str, paper: bool) -> "AlpacaBroker":
@@ -52,10 +54,15 @@ class AlpacaBroker:
         # `cash` doesn't drop while a buy order is open; buying power does. Use the
         # non-marginable figure so margin never counts as spendable cash.
         power = account.non_marginable_buying_power or account.buying_power
-        positions = {p.symbol: _dec(p.qty) for p in self._trading.get_all_positions()
-                     if p.symbol in symbols}
+        positions, other = {}, Decimal(0)
+        for p in self._trading.get_all_positions():
+            if p.symbol in symbols:
+                positions[p.symbol] = _dec(p.qty)
+            elif p.market_value is not None:
+                # Not ours to trade, but part of the account: equity must include it.
+                other += _dec(p.market_value)
         return Portfolio(_dec(account.cash), positions, {s: self.get_price(s) for s in symbols},
-                         spendable=_dec(power) if power is not None else None)
+                         spendable=_dec(power) if power is not None else None, other_value=other)
 
     def get_price(self, symbol: str) -> Decimal:
         req = StockLatestTradeRequest(symbol_or_symbols=symbol, feed=DataFeed.IEX)
@@ -70,7 +77,15 @@ class AlpacaBroker:
                        _dec(b.volume)) for b in bars]
 
     def constraints(self, symbol: str) -> OrderConstraints:
-        return OrderConstraints(Decimal("1"), Decimal("1"), Decimal("0.01"))
+        # Fractionable assets accept fractional DAY limit orders (min $1 notional), so a
+        # small account can still buy a slice of a $600 ETF. Others trade whole shares.
+        if symbol not in self._constraints:
+            if getattr(self._trading.get_asset(symbol), "fractionable", False):
+                c = OrderConstraints(FRACTION, FRACTION, Decimal("0.01"), min_notional=Decimal("1"))
+            else:
+                c = OrderConstraints(Decimal("1"), Decimal("1"), Decimal("0.01"))
+            self._constraints[symbol] = c
+        return self._constraints[symbol]
 
     def place_limit_order(self, symbol, side, qty, limit_price, client_order_id) -> OrderResult:
         req = LimitOrderRequest(
