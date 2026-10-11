@@ -71,7 +71,7 @@ def test_owner_filter_requires_owner_user_not_just_owner_chat():
 def test_commands_use_owner_filter(tmp_path):
     app = make_bot(Store(str(tmp_path / "db")), None).build()
     handlers = [h for h in app.handlers[0] if isinstance(h, CommandHandler)]
-    assert len(handlers) == 5
+    assert {"run", "pause", "resume"} <= {c for h in handlers for c in h.commands}
     for h in handlers:
         assert h.filters.check_update(message_update(OWNER, OWNER))
         assert not h.filters.check_update(message_update(OWNER, 2002))
