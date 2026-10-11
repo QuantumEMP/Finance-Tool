@@ -29,6 +29,23 @@ def is_paused(store: Store, account: str) -> bool:
     return store.get_flag("paused") == "1" or store.get_flag(f"paused:{account}") == "1"
 
 
+def resume(store: Store, now: datetime) -> list[str]:
+    """Clear the global pause and every kill-switch pause.
+
+    Accounts paused by the drawdown kill switch get a fresh peak baseline; otherwise
+    the next cycle would measure the same drawdown against the old peak and pause
+    again. Returns the names of those accounts.
+    """
+    store.set_flag("paused", None)
+    reset = []
+    for key in store.flags_with_prefix("paused:"):
+        account = key.removeprefix("paused:")
+        store.reset_peak(account, now)
+        store.set_flag(key, None)
+        reset.append(account)
+    return reset
+
+
 def day_start(now: datetime) -> datetime:
     return now.astimezone(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
 

@@ -5,7 +5,7 @@ import pytest
 
 from agent.cycle import CycleRunner
 from agent.models import ProposalState, Side
-from agent.runtime import AccountRuntime
+from agent.runtime import AccountRuntime, resume
 from agent.store import Store
 from tests.fakes import Clock, FakeAnalyst, FakeBroker, FakeNews, make_account
 
@@ -92,6 +92,49 @@ def test_drawdown_kill_switch_pauses_account(env):
     assert "drawdown" in res.skipped_reason and analyst.calls == []
     assert store.get_flag("paused:test") == "1"
     assert any("/resume" in a for a in res.alerts)
+
+
+def test_resume_after_kill_switch_lets_next_cycle_run(env):
+    store, clock, broker, _, make = env
+    store.mark_equity("test", T0 - timedelta(days=1), Decimal("20000"))
+    analyst = FakeAnalyst({"SPY": ("BUY", 0.8)})
+    runner, rt = make(analyst)
+    assert "drawdown" in runner.run(rt).skipped_reason
+
+    clock.advance(hours=1)
+    assert resume(store, clock()) == ["test"]
+    assert store.get_flag("paused:test") is None
+
+    clock.advance(days=1)
+    res = runner.run(rt)
+    assert res.skipped_reason is None and len(res.proposals) == 1
+    assert store.get_flag("paused:test") is None
+    assert store.peak_equity("test") == Decimal("10000")
+
+
+def test_kill_switch_still_trips_on_new_drawdown_after_resume(env):
+    store, clock, broker, _, make = env
+    store.mark_equity("test", T0 - timedelta(days=1), Decimal("20000"))
+    runner, rt = make(FakeAnalyst({}))
+    runner.run(rt)
+    resume(store, clock())
+
+    clock.advance(days=1)
+    assert runner.run(rt).skipped_reason is None
+    broker.cash = Decimal("7000")
+    clock.advance(days=1)
+    res = runner.run(rt)
+    assert "drawdown" in res.skipped_reason and "10000.00" in res.skipped_reason
+    assert store.get_flag("paused:test") == "1"
+
+
+def test_resume_of_manual_pause_keeps_peak(env):
+    store, clock, _, _, _ = env
+    store.mark_equity("test", T0 - timedelta(days=1), Decimal("20000"))
+    store.set_flag("paused", "1")
+    assert resume(store, clock()) == []
+    assert store.get_flag("paused") is None
+    assert store.peak_equity("test") == Decimal("20000")
 
 
 def test_daily_order_limit_vetoes_extra(env):

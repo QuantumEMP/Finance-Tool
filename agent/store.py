@@ -200,8 +200,15 @@ class Store:
                     (account, ts(now), str(equity)))
 
     def peak_equity(self, account: str) -> Decimal | None:
-        rows = self._query("SELECT equity FROM equity_marks WHERE account = ?", (account,))
+        """Highest equity mark since the last peak reset (or ever, if never reset)."""
+        since = self.get_flag(f"peak_reset:{account}") or ""
+        rows = self._query("SELECT equity FROM equity_marks WHERE account = ? AND ts >= ?",
+                           (account, since))
         return max((Decimal(r["equity"]) for r in rows), default=None)
+
+    def reset_peak(self, account: str, now: datetime) -> None:
+        """Start a new drawdown baseline: only marks from `now` on count toward the peak."""
+        self.set_flag(f"peak_reset:{account}", ts(now))
 
     def first_equity_since(self, account: str, since: datetime) -> Decimal | None:
         rows = self._query(
