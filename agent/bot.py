@@ -38,6 +38,12 @@ def is_owner_update(chat_id: int | None, user_id: int | None, owner: int) -> boo
     return is_owner(chat_id, owner) and user_id is not None and user_id == owner
 
 
+def owner_filter(owner: int) -> filters.BaseFilter:
+    """Same check as the buttons: the owner's chat AND the owner's user, so a group
+    chat id never lets other members run commands."""
+    return filters.Chat(chat_id=owner) & filters.User(user_id=owner)
+
+
 def keyboard(pid: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([[
         InlineKeyboardButton("✅ Approve", callback_data=f"approve:{pid}"),
@@ -55,7 +61,7 @@ class TradingBot:
 
     def build(self) -> Application:
         app = Application.builder().token(self._token).build()
-        owner_only = filters.Chat(chat_id=self._owner)
+        owner_only = owner_filter(self._owner)
         for name, handler in [("run", self._cmd_run), ("status", self._cmd_status),
                               ("report", self._cmd_report), ("pause", self._cmd_pause),
                               ("resume", self._cmd_resume)]:
@@ -149,10 +155,25 @@ class TradingBot:
         action, pid = parsed
         await query.answer("Working…")
         await query.edit_message_reply_markup(reply_markup=None)
-        fn = self._executor.approve if action == "approve" else self._executor.reject
-        outcome = await asyncio.to_thread(fn, pid)
+        text = await asyncio.to_thread(self._decide, action, pid)
         original = query.message.text if query.message else ""
-        await query.edit_message_text(f"{original}\n\n{outcome.message}")
+        await query.edit_message_text(f"{original}\n\n{text}")
+
+    def _decide(self, action: str, pid: str) -> str:
+        """Run approve/reject. The buttons are already gone, so an unexpected error must
+        still leave an outcome on the message rather than a silent dead end."""
+        fn = self._executor.approve if action == "approve" else self._executor.reject
+        try:
+            return fn(pid).message
+        except Exception as e:
+            log.exception("%s failed for %s", action, pid)
+            try:
+                p = self._store.get_proposal(pid)
+                state = p.state.value.lower() if p else "unknown"
+            except Exception:
+                state = "unknown"
+            return (f"⚠️ {action.capitalize()} failed ({type(e).__name__}: {e}). "
+                    f"The proposal is now {state}; check /status before trying again.")
 
     # --- jobs ----------------------------------------------------------------
 
