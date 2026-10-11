@@ -16,7 +16,7 @@ from agent.config import AppConfig
 from agent.cycle import CycleRunner
 from agent.executor import Executor
 from agent.reports import format_proposal, heartbeat_text, report_text, status_text
-from agent.runtime import AccountRuntime
+from agent.runtime import AccountRuntime, resume
 from agent.store import Store
 
 log = logging.getLogger(__name__)
@@ -126,12 +126,12 @@ class TradingBot:
         await update.effective_message.reply_text("⏸ Paused. No proposals or executions until /resume.")
 
     async def _cmd_resume(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        def resume():
-            self._store.set_flag("paused", None)
-            for key in self._store.flags_with_prefix("paused:"):
-                self._store.set_flag(key, None)
-        await asyncio.to_thread(resume)
-        await update.effective_message.reply_text("▶️ Resumed.")
+        reset = await asyncio.to_thread(resume, self._store, self._now())
+        text = "▶️ Resumed."
+        if reset:
+            text += (f" Drawdown peak reset for {', '.join(reset)}: the kill switch now measures"
+                     " from the next equity mark.")
+        await update.effective_message.reply_text(text)
 
     # --- buttons -------------------------------------------------------------
 
