@@ -255,3 +255,80 @@ def test_expire_stale(env):
     assert {p.id for p in expired} == {PID, "b" * 32}
     assert state(store) is PS.EXPIRED
     assert executor().expire_stale() == []
+
+
+# --- unfilled orders are cancelled after expiry --------------------------------
+
+def submit_open(env):
+    _, store, _, broker, executor = env
+    make_pending(store)
+    broker.place_status = OrderStatus.SUBMITTED
+    ex = executor()
+    assert ex.approve(PID).state is PS.SUBMITTED
+    return ex
+
+
+def test_open_order_is_cancelled_after_expiry_and_unlocks_symbol(env):
+    _, store, clock, broker, _ = env
+    ex = submit_open(env)
+    assert store.open_symbols("test") == {"SPY"}
+    clock.advance(minutes=71)
+    [out] = ex.reconcile()
+    assert broker.cancelled == [PID]
+    assert out.state is PS.EXPIRED and "Cancelled unfilled order" in out.message
+    p = store.get_proposal(PID)
+    assert p.state is PS.EXPIRED and "cancelled" in p.reason
+    assert store.open_symbols("test") == set()
+    assert ex.reconcile() == [] and broker.cancelled == [PID]
+
+
+def test_open_order_not_cancelled_before_grace(env):
+    _, store, clock, broker, _ = env
+    ex = submit_open(env)
+    clock.advance(minutes=69)
+    assert ex.reconcile() == []
+    assert broker.cancelled == [] and state(store) is PS.SUBMITTED
+
+
+def test_partly_filled_open_order_keeps_its_fill_when_cancelled(env):
+    _, store, clock, broker, _ = env
+    ex = submit_open(env)
+    broker.orders[PID] = OrderResult(PID, OrderStatus.SUBMITTED, Decimal("2"), Decimal("100.1"))
+    clock.advance(minutes=71)
+    [out] = ex.reconcile()
+    assert out.state is PS.PARTIALLY_FILLED and "rest was cancelled" in out.message
+    p = store.get_proposal(PID)
+    assert p.filled_qty == Decimal("2") and p.avg_price == Decimal("100.1")
+    assert store.open_symbols("test") == set()
+
+
+def test_order_filled_before_cancel_is_recorded_as_filled(env):
+    _, store, clock, broker, _ = env
+    ex = submit_open(env)
+    clock.advance(minutes=71)
+    broker.orders[PID] = OrderResult(PID, OrderStatus.FILLED, Decimal("5"), Decimal("100.1"))
+    [out] = ex.reconcile()
+    assert out.state is PS.FILLED and broker.cancelled == []
+
+
+def test_failed_cancel_is_retried_next_pass(env):
+    _, store, clock, broker, _ = env
+    ex = submit_open(env)
+    clock.advance(minutes=71)
+    broker.fail_cancel = RuntimeError("exchange down")
+    assert ex.reconcile() == [] and state(store) is PS.SUBMITTED
+    assert store.events("test", "cancel_error")[0]["proposal"] == PID
+    broker.fail_cancel = None
+    [out] = ex.reconcile()
+    assert out.state is PS.EXPIRED and broker.cancelled == [PID, PID]
+
+
+def test_cancel_still_pending_is_settled_next_pass(env):
+    _, store, clock, broker, _ = env
+    ex = submit_open(env)
+    clock.advance(minutes=71)
+    broker.cancel_pending = True
+    assert ex.reconcile() == [] and state(store) is PS.SUBMITTED
+    broker.cancel_pending = False
+    [out] = ex.reconcile()
+    assert out.state is PS.EXPIRED

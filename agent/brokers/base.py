@@ -30,3 +30,8 @@ class Broker(Protocol):
     def get_order(self, client_order_id: str) -> OrderResult | None:
         """None means the venue confirms no such order exists."""
         ...
+
+    def cancel_order(self, client_order_id: str) -> None:
+        """Ask the venue to cancel an open order. A no-op if it is already closed; the
+        outcome (cancelled, or filled in the meantime) is read back with get_order."""
+        ...

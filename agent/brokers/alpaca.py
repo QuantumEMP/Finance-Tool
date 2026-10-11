@@ -88,3 +88,14 @@ class AlpacaBroker:
             if getattr(e, "status_code", None) == 404:
                 return None
             raise
+
+    def cancel_order(self, client_order_id: str) -> None:
+        try:
+            order = self._trading.get_order_by_client_id(client_order_id)
+        except Exception as e:
+            if getattr(e, "status_code", None) == 404:
+                return
+            raise
+        if getattr(order.status, "value", order.status) in _CLOSED | {"filled"}:
+            return
+        self._trading.cancel_order_by_id(order.id)

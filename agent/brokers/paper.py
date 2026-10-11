@@ -50,6 +50,9 @@ class PaperBroker:
     def get_order(self, client_order_id):
         return self._store.get_paper_order(client_order_id)
 
+    def cancel_order(self, client_order_id):
+        pass  # paper orders fill or reject immediately; nothing is ever left open
+
     def _simulate(self, symbol, side, qty, limit_price, cid) -> OrderResult:
         def reject(reason: str) -> OrderResult:
             return OrderResult(cid, OrderStatus.REJECTED, reason=f"paper: {reason}")

@@ -63,6 +63,9 @@ class FakeBroker:
         self.fail_place: Exception | None = None         # raise; order never landed
         self.raise_after_place: Exception | None = None  # order landed, then raise
         self.fail_reads: Exception | None = None
+        self.cancelled: list[str] = []
+        self.fail_cancel: Exception | None = None
+        self.cancel_pending = False  # cancel accepted, but the order still reads as open
 
     def _check(self):
         if self.fail_reads:
@@ -110,6 +113,17 @@ class FakeBroker:
     def get_order(self, client_order_id):
         self._check()
         return self.orders.get(client_order_id)
+
+    def cancel_order(self, client_order_id):
+        self.cancelled.append(client_order_id)
+        if self.fail_cancel:
+            raise self.fail_cancel
+        o = self.orders.get(client_order_id)
+        if o is None or o.status is not OrderStatus.SUBMITTED or self.cancel_pending:
+            return
+        st = OrderStatus.PARTIALLY_FILLED if o.filled_qty > 0 else OrderStatus.REJECTED
+        self.orders[client_order_id] = OrderResult(client_order_id, st, o.filled_qty, o.avg_price,
+                                                   "canceled")
 
 
 # --- appended in Task 10 ---

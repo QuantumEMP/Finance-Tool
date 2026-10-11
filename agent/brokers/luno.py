@@ -134,3 +134,13 @@ class LunoBroker:
         if r.status_code == 404 or (r.status_code >= 400 and "NotFound" in r.text):
             return None
         return map_luno_order(client_order_id, self._json(r))
+
+    def cancel_order(self, client_order_id: str) -> None:
+        # Luno cancels by its own order_id, so look that up first.
+        r = self._request("GET", "/api/exchange/3/order", params={"client_order_id": client_order_id})
+        if r.status_code == 404 or (r.status_code >= 400 and "NotFound" in r.text):
+            return
+        o = self._json(r)
+        if o.get("status") == "COMPLETE":
+            return
+        self._json(self._request("POST", "/api/1/stoporder", data={"order_id": o["order_id"]}))

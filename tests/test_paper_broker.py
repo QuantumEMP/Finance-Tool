@@ -66,3 +66,11 @@ def test_state_survives_new_instance(setup):
     again = PaperBroker(market, store, "luno", D("10000"), fee_pct=D("0.5"))
     assert again.get_portfolio(["XBTZAR"]).positions == {"XBTZAR": D("1")}
     assert store.paper_holdings("luno")[CASH] < D("10000")
+
+
+def test_cancel_is_a_no_op(setup):
+    _, _, paper = setup
+    first = paper.place_limit_order("XBTZAR", Side.BUY, D("1"), D("101"), CID)
+    paper.cancel_order(CID)
+    paper.cancel_order("e" * 32)
+    assert paper.get_order(CID) == first
