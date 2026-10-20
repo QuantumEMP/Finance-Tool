@@ -1,0 +1,17 @@
+# Claude Console environment for the finance agent.
+# Network is deny-by-default: only PyPI (to install the agent), the agent's code on GitHub,
+# Alpaca's PAPER trading and market-data hosts, and Luno's API. Alpaca's live trading host
+# (api.alpaca.markets) is deliberately not listed, so live Alpaca orders cannot be sent.
+name: finance-agent-paper
+description: Sandbox for the paper-trading finance agent
+config:
+  type: cloud
+  networking:
+    type: limited
+    allow_package_managers: true
+    allow_mcp_servers: false
+    allowed_hosts:
+      - codeload.github.com
+      - paper-api.alpaca.markets
+      - data.alpaca.markets
+      - api.luno.com
