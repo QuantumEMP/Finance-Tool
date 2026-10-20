@@ -171,7 +171,8 @@ class App:
             return
         for alert in result.alerts:
             self.out(f"ALERT: {alert}")
-        self.out(f"{account}: skipped ({result.skipped_reason}). Do not run trade for this account today.")
+        reason = result.skipped_reason or "see the alert above"
+        self.out(f"{account}: skipped ({reason}). Do not run trade for this account today.")
 
     def trade(self, account: str, signals: Path, execute: bool) -> None:
         rt = self._runtime(account)

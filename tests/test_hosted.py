@@ -45,6 +45,13 @@ def test_snapshot_reports_skip(app):
     assert "skipped (market closed)" in out[-1]
 
 
+def test_snapshot_reports_broker_error(app):
+    a, broker, out = app
+    broker.fail_reads = RuntimeError("down")
+    a.snapshot("test")
+    assert out[0].startswith("ALERT:") and "skipped (see the alert above)" in out[-1]
+
+
 def test_trade_places_paper_orders_from_signals(app, tmp_path):
     a, broker, out = app
     path = write_signals(tmp_path, [{"symbol": "SPY", "signal": "BUY", "confidence": 0.8,
