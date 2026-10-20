@@ -60,6 +60,12 @@ journalctl -u finance-agent -f
 Edit `config.yaml` for your allowlists, Luno quote currency (ZAR/NGN/…), schedule
 times and risk limits, then run `sudo systemctl restart finance-agent`.
 
+### Or run it on Claude Console
+
+`agents/finance-agent/` runs the same agent as a scheduled Claude Managed Agent in your
+Console account, on paper trading, without a server or Telegram. See
+[agents/finance-agent/README.md](agents/finance-agent/README.md).
+
 ## Telegram commands
 
 | Command | What it does |

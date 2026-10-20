@@ -1,0 +1,14 @@
+# Every day at 09:00 Johannesburg time (crypto trades around the clock).
+name: finance-agent-luno
+agent: ./agent.md
+environment_id: ./environment.yaml
+vault_ids: []            # put the vault's vlt_... ID here after the vault exists
+resources:
+  - ./memory_store-state.yaml
+budget: {type: limit, max_list_cost: {amount: "300", currency: USD}}   # $3 cap per run
+schedule: {type: cron, expression: "0 9 * * *", timezone: Africa/Johannesburg}
+initial_events:
+  - type: user.message
+    content:
+      - type: text
+        text: Run today's paper-trading cycle for the luno account.

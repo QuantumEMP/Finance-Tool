@@ -1,0 +1,4 @@
+# The vault is only a container. The Alpaca and Luno keys are added to it in the Console
+# (see README.md) and never live in this repository.
+type: vault
+display_name: finance-agent-paper

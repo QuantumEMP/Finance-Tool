@@ -1,0 +1,5 @@
+name: finance-agent-state
+description: >-
+  The finance agent's saved database (proposals, fills, equity history, paper balances,
+  pause flags). Only `python -m agent.hosted --state-dir` reads and writes these files.
+  Never edit, delete or create files here yourself.

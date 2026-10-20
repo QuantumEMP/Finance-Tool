@@ -1,0 +1,14 @@
+# Weekdays at 10:00 New York time, 30 minutes after the US market opens.
+name: finance-agent-alpaca
+agent: ./agent.md
+environment_id: ./environment.yaml
+vault_ids: []            # put the vault's vlt_... ID here after the vault exists
+resources:
+  - ./memory_store-state.yaml
+budget: {type: limit, max_list_cost: {amount: "300", currency: USD}}   # $3 cap per run
+schedule: {type: cron, expression: "0 10 * * 1-5", timezone: America/New_York}
+initial_events:
+  - type: user.message
+    content:
+      - type: text
+        text: Run today's paper-trading cycle for the alpaca account.
